@@ -20,6 +20,8 @@ impl<F: PrimeField> Machine<F> for MinimalMachineNoExceptionHandlingWithDelegati
     const ASSUME_TRUSTED_CODE: bool = true;
     const OUTPUT_EXACT_EXCEPTIONS: bool = false;
     const USE_ROM_FOR_BYTECODE: bool = true;
+    // SYSCOIN: Reduced recursion machines do not compile the CSR 0x7cb selector.
+    const SUPPORT_SHA_DELEGATION: bool = false;
 
     type State = MinimalStateRegistersInMemory<F>;
 

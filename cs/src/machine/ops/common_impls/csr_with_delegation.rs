@@ -10,6 +10,7 @@ pub fn apply_csr_with_delegation<
     const SUPPORT_CSRRC: bool,
     const SUPPORT_CSRRS: bool,
     const SUPPORT_CSR_IMMEDIATES: bool,
+    const SUPPORT_SHA_DELEGATION: bool,
     const ASSUME_TRUSTED_CODE: bool,
     const OUTPUT_EXACT_EXCEPTIONS: bool,
 >(
@@ -54,6 +55,29 @@ pub fn apply_csr_with_delegation<
             let should_delegate = cs.add_variable_from_constraint(
                 Term::from(is_for_delegation) * Term::from(exec_flag),
             );
+
+            if SUPPORT_SHA_DELEGATION {
+                // SYSCOIN: CSR 0x7cb requires the rs1 value to be zero (the canonical encoding
+                // uses x0). Its delegation trace does not carry the generic offset ABI, so
+                // accepting either limb would make the main request impossible to link to the
+                // SHA response. Keep the existing Blake2s and bigint delegation ABIs unchanged,
+                // and compile this selector only into machines that actually permit CSR 0x7cb.
+                let csr_index_variable =
+                    cs.add_variable_from_constraint_allow_explicit_linear(csr_index.clone());
+                let is_sha256_round = cs.equals_to(
+                    Num::Var(csr_index_variable),
+                    Num::Constant(F::from_u64_unchecked(
+                        sha256_u32::SYSCOIN_SHA256_ROUND_FUNCTION_ACCESS_ID as u64,
+                    )),
+                );
+                let execute_sha256_round = Boolean::and(&is_sha256_round, &exec_flag, cs);
+                cs.add_constraint(
+                    Term::from(execute_sha256_round) * Term::from(src1.0[0].get_variable()),
+                );
+                cs.add_constraint(
+                    Term::from(execute_sha256_round) * Term::from(src1.0[1].get_variable()),
+                );
+            }
 
             // in our ABI we use highest 16 bits of src1 as the offset
             let offset = src1.0[1];

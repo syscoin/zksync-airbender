@@ -42,6 +42,11 @@ pub fn get_machine_for_rom_bound<const ROM_ADDRESS_SPACE_SECOND_WORD_BITS: usize
     bytecode: &[u32],
     delegation_csrs: &[u32],
 ) -> one_row_compiler::CompiledCircuitArtifact<field::Mersenne31Field> {
+    // SYSCOIN: This verifier/base machine must remain SHA-delegation-free.
+    prover::cs::machine::machine_configurations::assert_delegation_csrs_supported_by_machine::<
+        Mersenne31Field,
+        Machine,
+    >(delegation_csrs);
     assert_eq!(
         bytecode.len(),
         (1 << (16 + ROM_ADDRESS_SPACE_SECOND_WORD_BITS)) / 4
@@ -84,6 +89,10 @@ pub fn get_table_driver_for_rom_bound<const ROM_ADDRESS_SPACE_SECOND_WORD_BITS: 
     bytecode: &[u32],
     delegation_csrs: &[u32],
 ) -> prover::cs::tables::TableDriver<Mersenne31Field> {
+    prover::cs::machine::machine_configurations::assert_delegation_csrs_supported_by_machine::<
+        Mersenne31Field,
+        Machine,
+    >(delegation_csrs);
     assert_eq!(
         bytecode.len(),
         (1 << (16 + ROM_ADDRESS_SPACE_SECOND_WORD_BITS)) / 4
@@ -166,5 +175,13 @@ mod test {
     #[test]
     fn generate() {
         generate_artifacts();
+    }
+
+    #[test]
+    #[should_panic(expected = "machine does not support the SYSCOIN SHA-256 delegation CSR")]
+    fn syscoin_sha_delegation_is_rejected_by_sha_free_builder() {
+        // SYSCOIN: Validation deliberately precedes the bytecode-size check, so this stays a
+        // cheap config regression instead of compiling a 2^22-row circuit.
+        let _ = get_machine(&[], &[0x7cb]);
     }
 }

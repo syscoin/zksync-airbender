@@ -190,3 +190,46 @@ pub fn bigint_with_control_factory_fn<A: GoodAllocator>(
         indirect_writes: Vec::with_capacity_in(capacity * 8, allocator.clone()),
     }
 }
+
+// SYSCOIN: CSR 0x7cb geometry: x10 state[8] R/W, x11 -> W[t], x12 K[t].
+pub fn sha256_round_factory_fn<A: GoodAllocator>(
+    delegation_type: u16,
+    num_requests: usize,
+    allocator: A,
+) -> DelegationWitness<A> {
+    let capacity = num_requests + 1;
+    assert!(
+        capacity.is_power_of_two(),
+        "expected capacity to be power of two, got {}",
+        capacity
+    );
+
+    let x10_indirect_access_properties: Vec<_> = (0..8)
+        .map(|index| IndirectAccessLocation {
+            use_writes: true,
+            index,
+        })
+        .collect();
+    let x11_indirect_access_properties = vec![IndirectAccessLocation {
+        use_writes: false,
+        index: 0,
+    }];
+
+    DelegationWitness {
+        num_requests,
+        num_register_accesses_per_delegation: 3,
+        num_indirect_reads_per_delegation: 1,
+        num_indirect_writes_per_delegation: 8,
+        base_register_index: 10,
+        delegation_type,
+        indirect_accesses_properties: vec![
+            x10_indirect_access_properties,
+            x11_indirect_access_properties,
+        ],
+
+        write_timestamp: Vec::with_capacity_in(capacity, allocator.clone()),
+        register_accesses: Vec::with_capacity_in(capacity * 3, allocator.clone()),
+        indirect_reads: Vec::with_capacity_in(capacity, allocator.clone()),
+        indirect_writes: Vec::with_capacity_in(capacity * 8, allocator),
+    }
+}

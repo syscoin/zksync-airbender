@@ -11,6 +11,8 @@ use std::mem::MaybeUninit;
 use std::ops::Range;
 
 pub mod blake2_round_function_with_compression_mode;
+// SYSCOIN: Unrolled-state CSR 0x7cb simulator handler.
+pub mod sha256_round_function;
 pub mod u256_ops_with_control;
 
 #[derive(Clone, Copy, Debug)]

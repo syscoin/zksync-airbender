@@ -187,6 +187,8 @@ pub trait Machine<F: PrimeField>: 'static + Clone + Default {
     const ASSUME_TRUSTED_CODE: bool;
     const OUTPUT_EXACT_EXCEPTIONS: bool;
     const USE_ROM_FOR_BYTECODE: bool;
+    // SYSCOIN: Explicit circuit capability; never infer SHA support from an unrelated ISA flag.
+    const SUPPORT_SHA_DELEGATION: bool = false;
 
     type State: BaseMachineState<F>;
 

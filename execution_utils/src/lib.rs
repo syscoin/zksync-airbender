@@ -2,6 +2,22 @@
 #![feature(generic_const_exprs)]
 #![feature(allocator_api)]
 
+#[cfg(all(
+    feature = "release_verifier_artifacts",
+    feature = "vk_generation_without_artifacts"
+))]
+compile_error!(
+    "release_verifier_artifacts and vk_generation_without_artifacts are mutually exclusive"
+);
+
+#[cfg(not(any(
+    feature = "release_verifier_artifacts",
+    feature = "vk_generation_without_artifacts"
+)))]
+compile_error!(
+    "select release_verifier_artifacts (normal builds) or vk_generation_without_artifacts (VK bootstrap only)"
+);
+
 use clap::ValueEnum;
 use risc_v_simulator::abstractions::non_determinism::QuasiUARTSource;
 use risc_v_simulator::cycle::MachineConfig;
@@ -35,78 +51,83 @@ pub const BASE_PROGRAM: &[u8] = include_bytes!("../../examples/hashed_fibonacci/
 pub const BASE_PROGRAM_TEXT_SECTION: &[u8] =
     include_bytes!("../../examples/hashed_fibonacci/app.text");
 
-pub const BASE_LAYER_VERIFIER: &[u8] = include_bytes!("../../tools/verifier/base_layer.bin");
-pub const RECURSION_LAYER_VERIFIER: &[u8] =
-    include_bytes!("../../tools/verifier/recursion_layer.bin");
-pub const RECURSION_LOG_23_LAYER_VERIFIER: &[u8] =
-    include_bytes!("../../tools/verifier/recursion_log_23_layer.bin");
+#[cfg(feature = "release_verifier_artifacts")]
+macro_rules! verifier_artifact {
+    ($name:literal) => {
+        include_bytes!(concat!(env!("AIRBENDER_VERIFIER_ARTIFACT_DIR"), "/", $name))
+    };
+}
+
+#[cfg(feature = "vk_generation_without_artifacts")]
+macro_rules! verifier_artifact {
+    ($name:literal) => {
+        &[]
+    };
+}
+
+pub const BASE_LAYER_VERIFIER: &[u8] = verifier_artifact!("base_layer.bin");
+pub const RECURSION_LAYER_VERIFIER: &[u8] = verifier_artifact!("recursion_layer.bin");
+pub const RECURSION_LOG_23_LAYER_VERIFIER: &[u8] = verifier_artifact!("recursion_log_23_layer.bin");
 pub const RECURSION_LAYER_NO_DELEGATION_VERIFIER: &[u8] =
-    include_bytes!("../../tools/verifier/recursion_layer_no_delegation.bin");
-pub const FINAL_RECURSION_LAYER_VERIFIER: &[u8] =
-    include_bytes!("../../tools/verifier/final_recursion_layer.bin");
+    verifier_artifact!("recursion_layer_no_delegation.bin");
+pub const FINAL_RECURSION_LAYER_VERIFIER: &[u8] = verifier_artifact!("final_recursion_layer.bin");
 
-pub const BASE_LAYER_VERIFIER_WITH_OUTPUT: &[u8] =
-    include_bytes!("../../tools/verifier/base_layer_with_output.bin");
+pub const BASE_LAYER_VERIFIER_WITH_OUTPUT: &[u8] = verifier_artifact!("base_layer_with_output.bin");
 pub const RECURSION_LAYER_VERIFIER_WITH_OUTPUT: &[u8] =
-    include_bytes!("../../tools/verifier/recursion_layer_with_output.bin");
+    verifier_artifact!("recursion_layer_with_output.bin");
 pub const RECURSION_LOG_23_LAYER_VERIFIER_WITH_OUTPUT: &[u8] =
-    include_bytes!("../../tools/verifier/recursion_log_23_layer_with_output.bin");
+    verifier_artifact!("recursion_log_23_layer_with_output.bin");
 pub const RECURSION_LAYER_NO_DELEGATION_VERIFIER_WITH_OUTPUT: &[u8] =
-    include_bytes!("../../tools/verifier/recursion_layer_no_delegation_with_output.bin");
+    verifier_artifact!("recursion_layer_no_delegation_with_output.bin");
 pub const FINAL_RECURSION_LAYER_VERIFIER_WITH_OUTPUT: &[u8] =
-    include_bytes!("../../tools/verifier/final_recursion_layer_with_output.bin");
+    verifier_artifact!("final_recursion_layer_with_output.bin");
 
-pub const UNIVERSAL_CIRCUIT_VERIFIER: &[u8] = include_bytes!("../../tools/verifier/universal.bin");
+pub const UNIVERSAL_CIRCUIT_VERIFIER: &[u8] = verifier_artifact!("universal.bin");
+// SYSCOIN: Exercise the exact no-delegation universal ROM shipped for the final machine.
+pub const UNIVERSAL_CIRCUIT_NO_DELEGATION_VERIFIER: &[u8] =
+    verifier_artifact!("universal_no_delegation.bin");
 
 // Methods to fetch the verification keys for the binaries above.
 // They are usually refreshed with build_vk.sh
 pub fn base_layer_verifier_vk() -> VerificationKey {
-    serde_json::from_slice::<VerificationKey>(include_bytes!(
-        "../../tools/verifier/base_layer.reduced.vk.json"
-    ))
-    .unwrap()
+    serde_json::from_slice::<VerificationKey>(verifier_artifact!("base_layer.reduced.vk.json"))
+        .unwrap()
 }
 
 pub fn recursion_layer_verifier_vk() -> VerificationKey {
-    serde_json::from_slice::<VerificationKey>(include_bytes!(
-        "../../tools/verifier/recursion_layer.reduced.vk.json"
-    ))
-    .unwrap()
+    serde_json::from_slice::<VerificationKey>(verifier_artifact!("recursion_layer.reduced.vk.json"))
+        .unwrap()
 }
 
 pub fn recursion_log_23_layer_verifier_vk() -> VerificationKey {
-    serde_json::from_slice::<VerificationKey>(include_bytes!(
-        "../../tools/verifier/recursion_log_23_layer.reduced.vk.json"
+    serde_json::from_slice::<VerificationKey>(verifier_artifact!(
+        "recursion_log_23_layer.reduced.vk.json"
     ))
     .unwrap()
 }
 
 pub fn recursion_layer_no_delegation_verifier_vk() -> VerificationKey {
-    serde_json::from_slice::<VerificationKey>(include_bytes!(
-        "../../tools/verifier/recursion_layer_no_delegation.final.vk.json"
+    serde_json::from_slice::<VerificationKey>(verifier_artifact!(
+        "recursion_layer_no_delegation.final.vk.json"
     ))
     .unwrap()
 }
 
 pub fn final_recursion_layer_verifier_vk() -> VerificationKey {
-    serde_json::from_slice::<VerificationKey>(include_bytes!(
-        "../../tools/verifier/final_recursion_layer.final.vk.json"
+    serde_json::from_slice::<VerificationKey>(verifier_artifact!(
+        "final_recursion_layer.final.vk.json"
     ))
     .unwrap()
 }
 
 pub fn universal_circuit_verifier_vk() -> VerificationKey {
-    serde_json::from_slice::<VerificationKey>(include_bytes!(
-        "../../tools/verifier/universal.reduced.vk.json"
-    ))
-    .unwrap()
+    serde_json::from_slice::<VerificationKey>(verifier_artifact!("universal.reduced.vk.json"))
+        .unwrap()
 }
 
 pub fn universal_circuit_log_23_verifier_vk() -> VerificationKey {
-    serde_json::from_slice::<VerificationKey>(include_bytes!(
-        "../../tools/verifier/universal.reduced_log23.vk.json"
-    ))
-    .unwrap()
+    serde_json::from_slice::<VerificationKey>(verifier_artifact!("universal.reduced_log23.vk.json"))
+        .unwrap()
 }
 
 pub fn get_padded_binary(binary: &[u8]) -> Vec<u32> {
@@ -133,6 +154,10 @@ pub const BASE_LAYER_DELEGATION_CIRCUITS_VERIFICATION_PARAMETERS: &[(
         ALL_DELEGATION_CIRCUITS_PARAMS[1].0,
         &ALL_DELEGATION_CIRCUITS_PARAMS[1].2,
     ),
+    (
+        ALL_DELEGATION_CIRCUITS_PARAMS[2].0,
+        &ALL_DELEGATION_CIRCUITS_PARAMS[2].2,
+    ),
 ];
 
 pub const RECURSION_LAYER_CIRCUITS_VERIFICATION_PARAMETERS: &[(
@@ -147,6 +172,13 @@ pub const FINAL_RECURSION_LAYER_CIRCUITS_VERIFICATION_PARAMETERS: &[(
     u32,
     &[MerkleTreeCap<CAP_SIZE>; NUM_COSETS],
 )] = &[];
+
+const _: () = {
+    assert!(ALL_DELEGATION_CIRCUITS_PARAMS.len() == 3);
+    assert!(ALL_DELEGATION_CIRCUITS_PARAMS[0].0 == 0x7c7);
+    assert!(ALL_DELEGATION_CIRCUITS_PARAMS[1].0 == 0x7ca);
+    assert!(ALL_DELEGATION_CIRCUITS_PARAMS[2].0 == 0x7cb);
+};
 
 pub const EXIT_SEQUENCE: &[u32] = &[
     0x000d2503, //	lw	a0, 0x0(s10)
@@ -194,15 +226,22 @@ pub struct VerificationKey {
 pub fn run_verifier_binary(binary: &[u8], reads: Vec<u32>) -> Option<[u32; 16]> {
     use risc_v_simulator::cycle::IMIsaConfigWithAllDelegations;
 
+    run_verifier_binary_for_machine::<IMIsaConfigWithAllDelegations>(binary, reads)
+}
+
+/// SYSCOIN: Run a verifier ROM under the exact machine configuration whose VK commits to it.
+#[allow(deprecated)]
+pub fn run_verifier_binary_for_machine<C: MachineConfig>(
+    binary: &[u8],
+    reads: Vec<u32>,
+) -> Option<[u32; 16]> {
     let final_pc = find_binary_exit_point(binary);
     println!("Expected final PC = 0x{:08x}", final_pc);
 
     let source = QuasiUARTSource::new_with_reads(reads);
 
-    let final_state = risc_v_simulator::runner::run_simple_for_num_cycles::<
-        _,
-        IMIsaConfigWithAllDelegations,
-    >(binary, 0, 1 << 30, source);
+    let final_state =
+        risc_v_simulator::runner::run_simple_for_num_cycles::<_, C>(binary, 0, 1 << 30, source);
 
     if final_state.state.pc != final_pc {
         println!(
@@ -375,6 +414,7 @@ pub fn compute_chain_encoding(data: Vec<[u32; 8]>) -> [u32; 8] {
 
 #[cfg(test)]
 mod test {
+    use sha2::{Digest, Sha256};
     use std::alloc::Global;
     use std::collections::BTreeMap;
     use std::io::Read;
@@ -399,6 +439,205 @@ mod test {
         run_on_binary("../tools/verifier/base_layer_with_output.bin");
         run_on_binary("../tools/verifier/recursion_layer_with_output.bin");
         run_on_binary("../tools/verifier/individual.bin");
+    }
+
+    fn append_load_u32(program: &mut Vec<String>, register: usize, value: u32) {
+        let upper = (((value as u64) + 0x800) >> 12) as u32 & 0x000f_ffff;
+        let base = upper << 12;
+        let lower = value.wrapping_sub(base) as i32;
+        assert!((-2048..=2047).contains(&lower));
+        program.push(format!("lui x{register}, 0x{upper:x}"));
+        program.push(format!("addi x{register}, x{register}, {lower}"));
+    }
+
+    /// SYSCOIN: This is the production-geometry, proof-level linkage gate for delegation CSR
+    /// 0x7cb. It proves an encoded main-machine request and its SHA delegation with common
+    /// Fiat-Shamir challenges, verifies the complete statement, and rejects the main proof when
+    /// the matching type-1995 delegation proof is removed.
+    #[test]
+    #[ignore = "full 2^22 main-machine plus 2^20 delegation CPU proof"]
+    fn syscoin_sha256_csr_main_and_delegation_full_statement() {
+        const STATE_ADDRESS: u32 = 1 << 21;
+        const SCHEDULE_ADDRESS: u32 = STATE_ADDRESS + 64;
+        const DELEGATION_TYPE: u32 = 0x7cb;
+        const STATE: [u32; 8] = [
+            0x6a09_e667,
+            0xbb67_ae85,
+            0x3c6e_f372,
+            0xa54f_f53a,
+            0x510e_527f,
+            0x9b05_688c,
+            0x1f83_d9ab,
+            0x5be0_cd19,
+        ];
+        const W: u32 = 0x6162_6380;
+        const K: u32 = 0x428a_2f98;
+
+        let mut assembly = Vec::new();
+        append_load_u32(&mut assembly, 10, STATE_ADDRESS);
+        for (index, value) in STATE.into_iter().enumerate() {
+            append_load_u32(&mut assembly, 5, value);
+            assembly.push(format!("sw x5, {}(x10)", index * 4));
+        }
+        assembly.push("addi x11, x10, 64".to_owned());
+        assert_eq!(SCHEDULE_ADDRESS, STATE_ADDRESS + 64);
+        append_load_u32(&mut assembly, 5, W);
+        assembly.push("sw x5, 0(x11)".to_owned());
+        append_load_u32(&mut assembly, 12, K);
+        assembly.push("csrrw x0, 1995, x0".to_owned());
+        assembly.push("lw x13, 0(x10)".to_owned());
+        assembly.push("jal x0, 0".to_owned());
+
+        let bytecode = lib_rv32_asm::assemble_program(&assembly.join("\n")).unwrap();
+        assert_eq!(bytecode[bytecode.len() - 3], 0x7cb0_1073);
+        assert_eq!(bytecode[bytecode.len() - 2], 0x0005_2683);
+        assert_eq!(bytecode[bytecode.len() - 1], 0x0000_006f);
+        let expected_final_pc = ((bytecode.len() - 1) * core::mem::size_of::<u32>()) as u32;
+
+        let mut bytecode = bytecode;
+        trace_and_split::setups::pad_bytecode_for_proving(&mut bytecode);
+        let worker = prover::worker::Worker::new();
+        let main_precomputations = trace_and_split::setups::get_main_riscv_circuit_setup::<
+            Global,
+            Global,
+        >(&bytecode, &worker);
+        let delegation_precomputations = vec![(
+            DELEGATION_TYPE,
+            trace_and_split::setups::get_sha256_round_circuit_setup::<Global, Global>(&worker),
+        )];
+        assert_eq!(main_precomputations.compiled_circuit.trace_len, 1 << 22);
+        assert_eq!(delegation_precomputations[0].1.trace_len, 1 << 20);
+        assert_eq!(
+            delegation_precomputations[0].1.compiled_circuit.trace_len,
+            1 << 20,
+        );
+        assert_eq!(
+            delegation_precomputations[0]
+                .1
+                .compiled_circuit
+                .num_requests_per_circuit,
+            (1 << 20) - 1,
+        );
+        let end_params = compute_end_parameters(expected_final_pc, &main_precomputations);
+
+        let proving_started = std::time::Instant::now();
+        let (main_proofs, delegation_proofs, register_final_values) =
+            prover_examples::prove_image_execution(
+                1,
+                &bytecode,
+                QuasiUARTSource::default(),
+                &main_precomputations,
+                &delegation_precomputations,
+                &worker,
+            );
+        eprintln!(
+            "SYSCOIN linked main+SHA CPU proving wall time: {:?}",
+            proving_started.elapsed()
+        );
+        assert_eq!(main_proofs.len(), 1);
+        assert_eq!(delegation_proofs.len(), 1);
+        assert_eq!(delegation_proofs[0].0, DELEGATION_TYPE);
+        assert_eq!(delegation_proofs[0].1.len(), 1);
+
+        let program_proof = ProgramProof {
+            base_layer_proofs: main_proofs,
+            delegation_proofs: delegation_proofs.into_iter().collect(),
+            register_final_values,
+            end_params,
+            recursion_chain_preimage: None,
+            recursion_chain_hash: None,
+        };
+        assert_eq!(program_proof.get_num_delegation_proofs_for_type(1991), 0);
+        assert_eq!(program_proof.get_num_delegation_proofs_for_type(1994), 0);
+        assert_eq!(
+            program_proof.get_num_delegation_proofs_for_type(DELEGATION_TYPE),
+            1
+        );
+
+        let allowed_delegations = [1991, 1994, DELEGATION_TYPE];
+        let flattened = program_proof.flatten_for_delegation_circuits_set(&allowed_delegations);
+        let flattened_bytes = flattened.len() * core::mem::size_of::<u32>();
+        let mut hasher = Sha256::new();
+        for word in &flattened {
+            hasher.update(word.to_le_bytes());
+        }
+        let flattened_hash = format!("{:x}", hasher.finalize());
+        eprintln!(
+            "SYSCOIN linked flattened proof: {} u32 / {} bytes / sha256 {}",
+            flattened.len(),
+            flattened_bytes,
+            flattened_hash
+        );
+
+        let verify = |oracle_data: Vec<u32>| {
+            std::thread::Builder::new()
+                .name("syscoin-full-statement-verifier".to_owned())
+                .stack_size(1 << 27)
+                .spawn(move || {
+                    verifier_common::prover::nd_source_std::set_iterator(oracle_data.into_iter());
+                    let output = full_statement_verifier::verify_base_layer();
+                    assert!(
+                        verifier_common::prover::nd_source_std::try_read_word().is_none(),
+                        "full-statement verifier must consume the complete flattened proof"
+                    );
+                    output
+                })
+                .unwrap()
+                .join()
+        };
+        let output = verify(flattened.clone()).expect("canonical linked statement must verify");
+        assert_eq!(
+            &output[..8],
+            &[STATE_ADDRESS, SCHEDULE_ADDRESS, K, 0x5d6a_ebcd, 0, 0, 0, 0]
+        );
+        let expected_chain = create_initial_chain_encoding_encoding(&program_proof.end_params).1;
+        assert_eq!(&output[8..], &expected_chain);
+
+        // SYSCOIN: Route the same genuine linked base-layer proof through the freshly built
+        // target-12 no-delegation universal ROM. Prefix 0 is the BaseLayer selector consumed by
+        // its universal dispatcher, and the ROM must return the exact host-verified 16 words.
+        assert_eq!(VerifierCircuitsIdentifiers::BaseLayer as u32, 0);
+        let mut target12_oracle = Vec::with_capacity(flattened.len() + 1);
+        target12_oracle.push(VerifierCircuitsIdentifiers::BaseLayer as u32);
+        target12_oracle.extend_from_slice(&flattened);
+        let target12_output = run_verifier_binary_for_machine::<
+            risc_v_simulator::cycle::IWithoutByteAccessIsaConfig,
+        >(UNIVERSAL_CIRCUIT_NO_DELEGATION_VERIFIER, target12_oracle)
+        .expect("target-12 universal no-delegation ROM must verify the linked SHA statement");
+        assert_eq!(target12_output, output);
+
+        let sha_circuit = &delegation_precomputations[0]
+            .1
+            .compiled_circuit
+            .compiled_circuit;
+        let quotient_opening_index = sha_circuit.setup_layout.total_width
+            + sha_circuit.witness_layout.total_width
+            + sha_circuit.memory_layout.total_width
+            + sha_circuit.stage_2_layout.num_base_field_polys()
+            + sha_circuit.stage_2_layout.num_ext4_field_polys();
+        let mut mutated_sha = program_proof.clone();
+        mutated_sha
+            .delegation_proofs
+            .get_mut(&DELEGATION_TYPE)
+            .unwrap()[0]
+            .evaluations_at_random_points[quotient_opening_index]
+            .c0
+            .c0
+            .0 ^= 1;
+        let rejection =
+            verify(mutated_sha.flatten_for_delegation_circuits_set(&allowed_delegations));
+        assert!(
+            rejection.is_err(),
+            "a mutated SHA quotient opening must be rejected"
+        );
+
+        let mut unlinked = program_proof;
+        unlinked.delegation_proofs.remove(&DELEGATION_TYPE);
+        let rejection = verify(unlinked.flatten_for_delegation_circuits_set(&allowed_delegations));
+        assert!(
+            rejection.is_err(),
+            "main CSR 1995 request without its delegation proof must be rejected"
+        );
     }
 
     #[test]

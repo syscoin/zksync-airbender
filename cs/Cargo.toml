@@ -15,6 +15,8 @@ field.workspace = true
 serde.workspace = true
 arrayvec.workspace = true
 blake2s_u32 = { workspace = true, optional = true}
+# SYSCOIN: SHA-256 round primitives used by the CSR 0x7cb constraint system.
+sha256_u32 = { workspace = true, optional = true}
 poseidon2 = { workspace = true, optional = true}
 itertools = { workspace = true, optional = true }
 derivative = { version = "2", optional = true }
@@ -37,7 +39,7 @@ rand = { workspace = true, features = ["std", "thread_rng", "std_rng"]}
 
 [features]
 definitions_only = []
-compiler = ["blake2s_u32", "poseidon2", "itertools", "derivative", "smallvec", "proc-macro2", "syn", "quote", "divrem", "seq-macro", "super-seq-macro", "serde_json", "bincode", "rayon", "type-map"]
+compiler = ["blake2s_u32", "sha256_u32", "poseidon2", "itertools", "derivative", "smallvec", "proc-macro2", "syn", "quote", "divrem", "seq-macro", "super-seq-macro", "serde_json", "bincode", "rayon", "type-map"]
 # Will perform witness evaluation in synthesis functions
 debug_evaluate_witness = []
 # When enabled, the crate will print detailed debug logs.

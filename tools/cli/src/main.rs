@@ -283,6 +283,14 @@ fn main() {
         .format_target(false)
         .init();
     let cli = Cli::parse();
+
+    #[cfg(feature = "vk_generation_without_artifacts")]
+    if !matches!(&cli.command, Commands::GenerateVk { .. }) {
+        panic!(
+            "vk_generation_without_artifacts is an internal bootstrap mode and only supports generate-vk"
+        );
+    }
+
     match &cli.command {
         Commands::Prove {
             bin,
@@ -443,11 +451,15 @@ pub enum CircuitType {
     RiscV,
     RiscVReduced,
     DelegatedExtendedBlake,
+    // SYSCOIN: Delegation proof files for CSR/type 1995.
+    DelegatedSyscoinSha256Round,
 }
 
 pub fn proof_name_to_circuit_type(file_name: &str) -> CircuitType {
     if file_name.starts_with("delegation_proof_1991_") {
         CircuitType::DelegatedExtendedBlake
+    } else if file_name.starts_with("delegation_proof_1995_") {
+        CircuitType::DelegatedSyscoinSha256Round
     } else if file_name.starts_with("proof_") {
         CircuitType::RiscV
     } else if file_name.starts_with("reduced_proof_") {
@@ -484,6 +496,7 @@ fn verify_proof(proof_path: &String) {
         CircuitType::RiscV => true,
         CircuitType::RiscVReduced => true,
         CircuitType::DelegatedExtendedBlake => false,
+        CircuitType::DelegatedSyscoinSha256Round => false,
     };
 
     let mut oracle_data = vec![];
@@ -518,6 +531,14 @@ fn verify_proof(proof_path: &String) {
         CircuitType::DelegatedExtendedBlake => {
             unsafe {
                 blake2_with_compression_verifier::verify(
+                    std::mem::MaybeUninit::uninit().assume_init_mut(),
+                    &mut verifier_common::ProofPublicInputs::uninit(),
+                )
+            };
+        }
+        CircuitType::DelegatedSyscoinSha256Round => {
+            unsafe {
+                sha256_round_verifier::verify(
                     std::mem::MaybeUninit::uninit().assume_init_mut(),
                     &mut verifier_common::ProofPublicInputs::uninit(),
                 )

@@ -134,3 +134,14 @@ pub(crate) fn create_bigint_with_control_delegation_layout() -> (
         setups::bigint_with_control::get_ssa_form(),
     )
 }
+
+// SYSCOIN: Canonical compiler input for the CSR 0x7cb delegation artifacts.
+pub(crate) fn create_sha256_round_delegation_layout() -> (
+    CompiledCircuitArtifact<Mersenne31Field>,
+    Vec<Vec<RawExpression<Mersenne31Field>>>,
+) {
+    (
+        setups::sha256_round::get_delegation_circuit().compiled_circuit,
+        setups::sha256_round::get_ssa_form(),
+    )
+}

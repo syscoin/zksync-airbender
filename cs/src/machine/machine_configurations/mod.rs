@@ -223,6 +223,20 @@ pub fn create_csr_table_for_delegation<F: PrimeField>(
     create_special_csr_properties_table(id, allow_non_determinism, allowed_delegation_csrs)
 }
 
+// SYSCOIN: Fail closed if a public circuit builder is given CSR 0x7cb while its machine omits
+// the SHA-specific rs1-value constraint. This validation happens before any expensive compilation.
+pub fn assert_delegation_csrs_supported_by_machine<F: PrimeField, M: Machine<F>>(
+    allowed_delegation_csrs: &[u32],
+) {
+    if M::SUPPORT_SHA_DELEGATION == false {
+        assert!(
+            allowed_delegation_csrs.contains(&sha256_u32::SYSCOIN_SHA256_ROUND_FUNCTION_ACCESS_ID)
+                == false,
+            "machine does not support the SYSCOIN SHA-256 delegation CSR"
+        );
+    }
+}
+
 // Use this function if you need CS-detached table driver, e.g. in proving or setup
 pub fn create_table_driver<
     F: PrimeField,

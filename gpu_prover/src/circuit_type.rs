@@ -1,11 +1,12 @@
 use fft::GoodAllocator;
 use prover::tracers::delegation::{
-    bigint_with_control_factory_fn, blake2_with_control_factory_fn, DelegationWitness,
+    bigint_with_control_factory_fn, blake2_with_control_factory_fn, sha256_round_factory_fn,
+    DelegationWitness,
 };
 use setups::{
     bigint_with_control, blake2_with_compression, final_reduced_risc_v_machine,
     machine_without_signed_mul_div, reduced_risc_v_log_23_machine, reduced_risc_v_machine,
-    risc_v_cycles,
+    risc_v_cycles, sha256_round,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -179,6 +180,8 @@ impl MainCircuitType {
 pub enum DelegationCircuitType {
     BigIntWithControl = bigint_with_control::DELEGATION_TYPE_ID,
     Blake2WithCompression = blake2_with_compression::DELEGATION_TYPE_ID,
+    // SYSCOIN: CSR 0x7cb delegation circuit identity.
+    Sha256Round = sha256_round::DELEGATION_TYPE_ID,
 }
 
 impl DelegationCircuitType {
@@ -192,6 +195,7 @@ impl DelegationCircuitType {
             DelegationCircuitType::Blake2WithCompression => {
                 blake2_with_compression::NUM_DELEGATION_CYCLES
             }
+            DelegationCircuitType::Sha256Round => sha256_round::NUM_DELEGATION_CYCLES,
         }
     }
 
@@ -199,6 +203,7 @@ impl DelegationCircuitType {
         match self {
             DelegationCircuitType::BigIntWithControl => bigint_with_control::DOMAIN_SIZE,
             DelegationCircuitType::Blake2WithCompression => blake2_with_compression::DOMAIN_SIZE,
+            DelegationCircuitType::Sha256Round => sha256_round::DOMAIN_SIZE,
         }
     }
 
@@ -206,6 +211,7 @@ impl DelegationCircuitType {
         match self {
             DelegationCircuitType::BigIntWithControl => bigint_with_control::LDE_FACTOR,
             DelegationCircuitType::Blake2WithCompression => blake2_with_compression::LDE_FACTOR,
+            DelegationCircuitType::Sha256Round => sha256_round::LDE_FACTOR,
         }
     }
 
@@ -215,6 +221,7 @@ impl DelegationCircuitType {
             DelegationCircuitType::Blake2WithCompression => {
                 blake2_with_compression::LDE_SOURCE_COSETS
             }
+            DelegationCircuitType::Sha256Round => sha256_round::LDE_SOURCE_COSETS,
         }
     }
 
@@ -222,6 +229,7 @@ impl DelegationCircuitType {
         match self {
             DelegationCircuitType::BigIntWithControl => bigint_with_control::TREE_CAP_SIZE,
             DelegationCircuitType::Blake2WithCompression => blake2_with_compression::TREE_CAP_SIZE,
+            DelegationCircuitType::Sha256Round => sha256_round::TREE_CAP_SIZE,
         }
     }
 
@@ -241,6 +249,13 @@ impl DelegationCircuitType {
                     allocator,
                 )
             },
+            DelegationCircuitType::Sha256Round => |allocator| {
+                sha256_round_factory_fn(
+                    sha256_round::DELEGATION_TYPE_ID as u16,
+                    sha256_round::NUM_DELEGATION_CYCLES,
+                    allocator,
+                )
+            },
         }
     }
 }
@@ -253,6 +268,7 @@ impl From<u16> for DelegationCircuitType {
             blake2_with_compression::DELEGATION_TYPE_ID => {
                 DelegationCircuitType::Blake2WithCompression
             }
+            sha256_round::DELEGATION_TYPE_ID => DelegationCircuitType::Sha256Round,
             _ => panic!("unknown delegation type {}", delegation_type),
         }
     }

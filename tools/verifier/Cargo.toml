@@ -28,6 +28,13 @@ panic = "abort"
 debug = false
 strip = true
 
+# SYSCOIN: The no-delegation universal verifier must implement Blake2s in
+# software. Keep its historical semantics and release settings, but optimize
+# this one ROM for size so it fits the fixed 2 MiB program region.
+[profile.release-universal-no-delegation]
+inherits = "release"
+opt-level = "s"
+
 [features]
 panic_output = ["riscv_common/uart", "riscv_common/custom_panic"]
 base_layer = [

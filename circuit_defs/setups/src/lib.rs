@@ -14,6 +14,7 @@ use prover::field::*;
 use prover::prover_stages::SetupPrecomputations;
 use prover::tracers::delegation::bigint_with_control_factory_fn;
 use prover::tracers::delegation::blake2_with_control_factory_fn;
+use prover::tracers::delegation::sha256_round_factory_fn;
 use prover::tracers::oracles::delegation_oracle::DelegationCircuitOracle;
 use prover::tracers::oracles::main_risc_v_circuit::MainRiscVOracle;
 use prover::DEFAULT_TRACE_PADDING_MULTIPLE;
@@ -33,6 +34,7 @@ pub use prover;
 pub use reduced_risc_v_log_23_machine;
 pub use reduced_risc_v_machine;
 pub use risc_v_cycles;
+pub use sha256_round;
 
 pub mod circuits;
 pub use self::circuits::*;
@@ -60,10 +62,49 @@ pub fn is_final_reduced_machine_configuration<C: MachineConfig>() -> bool {
 
 pub fn delegation_factories_for_machine<C: MachineConfig, A: GoodAllocator>(
 ) -> HashMap<u16, Box<dyn Fn() -> prover::tracers::delegation::DelegationWitness<A>>> {
-    if is_default_machine_configuration::<C>()
-        || is_machine_without_signed_mul_div_configuration::<C>()
-    {
-        // blake and bigint
+    if is_default_machine_configuration::<C>() {
+        // SYSCOIN: The ZKsync OS guest may invoke all production delegations, including 0x7cb.
+        HashMap::from_iter(
+            [
+                (
+                    blake2_with_compression::DELEGATION_TYPE_ID as u16,
+                    Box::new(|| {
+                        blake2_with_control_factory_fn(
+                            blake2_with_compression::DELEGATION_TYPE_ID as u16,
+                            blake2_with_compression::NUM_DELEGATION_CYCLES,
+                            A::default(),
+                        )
+                    })
+                        as Box<dyn Fn() -> prover::tracers::delegation::DelegationWitness<A>>,
+                ),
+                (
+                    bigint_with_control::DELEGATION_TYPE_ID as u16,
+                    Box::new(|| {
+                        bigint_with_control_factory_fn(
+                            bigint_with_control::DELEGATION_TYPE_ID as u16,
+                            bigint_with_control::NUM_DELEGATION_CYCLES,
+                            A::default(),
+                        )
+                    })
+                        as Box<dyn Fn() -> prover::tracers::delegation::DelegationWitness<A>>,
+                ),
+                (
+                    sha256_round::DELEGATION_TYPE_ID as u16,
+                    Box::new(|| {
+                        sha256_round_factory_fn(
+                            sha256_round::DELEGATION_TYPE_ID as u16,
+                            sha256_round::NUM_DELEGATION_CYCLES,
+                            A::default(),
+                        )
+                    })
+                        as Box<dyn Fn() -> prover::tracers::delegation::DelegationWitness<A>>,
+                ),
+            ]
+            .into_iter(),
+        )
+    } else if is_machine_without_signed_mul_div_configuration::<C>() {
+        // This configuration runs verifier/base programs, which do not invoke the guest-only
+        // SYSCOIN SHA-256 CSR.
         HashMap::from_iter(
             [
                 (
@@ -162,6 +203,10 @@ pub fn get_delegation_compiled_circuits_for_default_machine(
         bigint_with_control::DELEGATION_TYPE_ID,
         bigint_with_control::get_delegation_circuit(),
     ));
+    machines.push((
+        sha256_round::DELEGATION_TYPE_ID,
+        sha256_round::get_delegation_circuit(),
+    ));
 
     assert_eq!(
         machines.len(),
@@ -211,6 +256,10 @@ pub fn all_delegation_circuits_precomputations<A: GoodAllocator, B: GoodAllocato
             bigint_with_control::DELEGATION_TYPE_ID,
             get_bigint_with_control_circuit_setup(worker),
         ),
+        (
+            sha256_round::DELEGATION_TYPE_ID,
+            get_sha256_round_circuit_setup(worker),
+        ),
         // (
         //     blake2_single_round::DELEGATION_TYPE_ID,
         //     get_blake2_single_round_circuit_setup(worker),
@@ -233,7 +282,6 @@ pub fn get_delegation_compiled_circuits_for_machine_without_signed_mul_div_confi
         bigint_with_control::DELEGATION_TYPE_ID,
         bigint_with_control::get_delegation_circuit(),
     ));
-
     assert_eq!(
         machines.len(),
         IMWithoutSignedMulDivIsaConfig::ALLOWED_DELEGATION_CSRS.len()

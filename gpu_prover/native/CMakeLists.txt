@@ -42,6 +42,8 @@ add_library(gpu_prover_native STATIC
         vectorized.cuh
         witness/circuits/bigint_with_control.cu
         witness/circuits/blake2_with_compression.cu
+        # SYSCOIN: Generated CUDA witness kernel for delegation type 0x7cb.
+        witness/circuits/sha256_round.cu
         witness/circuits/final_reduced_risc_v_machine.cu
         witness/circuits/machine_without_signed_mul_div.cu
         witness/circuits/reduced_risc_v_machine.cu

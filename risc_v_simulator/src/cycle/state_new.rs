@@ -81,7 +81,9 @@ impl DelegationCSRProcessor for crate::delegations::DelegationsCSRProcessor {
         tracer: &mut TR,
     ) {
         use crate::delegations::unrolled::blake2_round_function_with_compression_mode::*;
+        use crate::delegations::unrolled::sha256_round_function::*;
         use crate::delegations::unrolled::u256_ops_with_control::*;
+        use sha256_u32::SYSCOIN_SHA256_ROUND_FUNCTION_ACCESS_ID;
 
         match csr_index as u32 {
             BLAKE2_ROUND_FUNCTION_WITH_EXTENDED_CONTROL_ACCESS_ID => {
@@ -90,6 +92,9 @@ impl DelegationCSRProcessor for crate::delegations::DelegationsCSRProcessor {
                     memory_source,
                     tracer,
                 );
+            }
+            SYSCOIN_SHA256_ROUND_FUNCTION_ACCESS_ID => {
+                sha256_round_function_over_unrolled_state(state, memory_source, tracer);
             }
             U256_OPS_WITH_CONTROL_ACCESS_ID => {
                 u256_ops_with_control_impl_over_unrolled_state(state, memory_source, tracer);
@@ -955,6 +960,16 @@ impl<Config: MachineConfig> RiscV32StateForUnrolledProver<Config> {
                                 Config::default(),
                                 delegation_csr
                             );
+                            if delegation_csr == sha256_u32::SYSCOIN_SHA256_ROUND_FUNCTION_ACCESS_ID
+                            {
+                                // SYSCOIN: the delegated response fixes the ABI offset to zero;
+                                // canonical bytecode uses x0, but any rs1 register holding zero is
+                                // semantically equivalent.
+                                assert_eq!(
+                                    rs1_value, 0,
+                                    "SHA-256 delegation requires the rs1 value to be zero"
+                                );
+                            }
                             Self::add_delegation(delegation_csr);
                             csr_processor.process_write(
                                 self,

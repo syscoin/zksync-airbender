@@ -13,10 +13,16 @@ type DE<F> = BasicDecodingResultWithSigns<F>;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct FullIsaMachineWithDelegationNoExceptionHandling;
 
+impl FullIsaMachineWithDelegationNoExceptionHandling {
+    // SYSCOIN: Production Full ISA machine capability for CSR 0x7cb.
+    pub const SUPPORT_SHA_DELEGATION: bool = true;
+}
+
 impl<F: PrimeField> Machine<F> for FullIsaMachineWithDelegationNoExceptionHandling {
     const ASSUME_TRUSTED_CODE: bool = true;
     const OUTPUT_EXACT_EXCEPTIONS: bool = false;
     const USE_ROM_FOR_BYTECODE: bool = true;
+    const SUPPORT_SHA_DELEGATION: bool = Self::SUPPORT_SHA_DELEGATION;
 
     type State = MinimalStateRegistersInMemory<F>;
 
@@ -96,6 +102,7 @@ impl<F: PrimeField> Machine<F> for FullIsaMachineWithDelegationNoExceptionHandli
             { <Self as Machine<F>>::OUTPUT_EXACT_EXCEPTIONS },
             true,
             true,
+            { FullIsaMachineWithDelegationNoExceptionHandling::SUPPORT_SHA_DELEGATION },
             ROM_ADDRESS_SPACE_SECOND_WORD_BITS,
         >(
             cs,

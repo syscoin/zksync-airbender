@@ -406,6 +406,7 @@ dependencies = [
  "serde",
  "serde_json",
  "setups",
+ "sha256_round_verifier",
  "sha3_ce",
  "trace_and_split",
  "verifier_common",
@@ -598,6 +599,7 @@ dependencies = [
  "seq-macro",
  "serde",
  "serde_json",
+ "sha256_u32",
  "smallvec",
  "super-seq-macro",
  "syn 2.0.111",
@@ -812,10 +814,13 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "clap",
+ "full_statement_verifier",
+ "lib-rv32-asm",
  "prover_examples",
  "risc_v_simulator",
  "serde",
  "serde_json",
+ "sha2",
  "trace_and_split",
  "verifier_common",
 ]
@@ -942,6 +947,7 @@ dependencies = [
  "reduced_risc_v_log_23_machine_verifier",
  "reduced_risc_v_machine_verifier",
  "risc_v_cycles_verifier",
+ "sha256_round_verifier",
  "verifier_common",
 ]
 
@@ -2164,6 +2170,7 @@ dependencies = [
  "seq-macro",
  "serde",
  "serde_json",
+ "sha256_u32",
  "syn 2.0.111",
  "trace_holder",
  "transcript",
@@ -2538,6 +2545,8 @@ dependencies = [
  "ringbuffer",
  "ruint",
  "serde",
+ "sha2",
+ "sha256_u32",
 ]
 
 [[package]]
@@ -2815,6 +2824,7 @@ dependencies = [
  "risc_v_cycles",
  "serde",
  "serde_json",
+ "sha256_round",
  "syn 2.0.111",
  "verifier_common",
 ]
@@ -2828,6 +2838,53 @@ dependencies = [
  "cfg-if",
  "cpufeatures",
  "digest",
+]
+
+[[package]]
+name = "sha2"
+version = "0.10.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
+dependencies = [
+ "cfg-if",
+ "cpufeatures",
+ "digest",
+]
+
+[[package]]
+name = "sha256_round"
+version = "0.1.0"
+dependencies = [
+ "prover",
+ "serde",
+ "serde_json",
+ "sha256_round_verifier",
+ "sha256_u32",
+ "verifier_common",
+ "verifier_generator",
+]
+
+[[package]]
+name = "sha256_round_verifier"
+version = "0.1.0"
+dependencies = [
+ "field",
+ "proc-macro2",
+ "prover",
+ "quote",
+ "risc_v_simulator",
+ "serde",
+ "serde_json",
+ "syn 2.0.111",
+ "unroll",
+ "verifier_common",
+]
+
+[[package]]
+name = "sha256_u32"
+version = "0.1.0"
+dependencies = [
+ "sha2",
 ]
 
 [[package]]

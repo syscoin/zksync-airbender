@@ -9,6 +9,8 @@ circuit_names=(
     "machine_without_signed_mul_div"
     "blake2_with_compression"
     "bigint_with_control"
+    # SYSCOIN: Generated verifier crate for delegation type 0x7cb.
+    "sha256_round"
 )
 
 # update the generated files

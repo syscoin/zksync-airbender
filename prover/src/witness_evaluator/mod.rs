@@ -32,7 +32,8 @@ mod ext_calls_with_gpu_tracers;
 mod memory_witness;
 pub mod witness_proxy;
 
-pub use self::new::{evaluate_witness, SimpleWitnessProxy};
+// SYSCOIN: Expose the one-row evaluator used by focused CSR 0x7cb constraint regressions.
+pub use self::new::{evaluate_witness, evaluate_witness_row_for_testing, SimpleWitnessProxy};
 
 pub(crate) mod utils;
 use utils::*;

@@ -16,7 +16,7 @@ use prover::DEFAULT_TRACE_PADDING_MULTIPLE;
 use setups::{
     bigint_with_control, blake2_with_compression, final_reduced_risc_v_machine,
     machine_without_signed_mul_div, reduced_risc_v_log_23_machine, reduced_risc_v_machine,
-    risc_v_cycles,
+    risc_v_cycles, sha256_round,
 };
 use std::alloc::Global;
 use std::sync::{Arc, OnceLock};
@@ -135,6 +135,11 @@ pub fn get_delegation_circuit_precomputations(
         DelegationCircuitType::Blake2WithCompression => (
             blake2_with_compression::get_delegation_circuit().compiled_circuit,
             blake2_with_compression::get_table_driver(),
+        ),
+        // SYSCOIN: SHA-256 round setup/precomputation dispatch.
+        DelegationCircuitType::Sha256Round => (
+            sha256_round::get_delegation_circuit().compiled_circuit,
+            sha256_round::get_table_driver(),
         ),
     };
     let domain_size = circuit_type.get_domain_size();

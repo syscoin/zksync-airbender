@@ -84,6 +84,15 @@ pub const BIGINT_WITH_CONTROL_VERIFIER_PTR: VerifierFunctionPointer<
     0,
 > = bigint_with_control_verifier::verify;
 
+// SYSCOIN: Pin type 0x7cb to its generated verifier and committed setup cap.
+pub const SYSCOIN_SHA256_ROUND_VERIFIER_PTR: VerifierFunctionPointer<
+    CAP_SIZE,
+    NUM_COSETS,
+    NUM_DELEGATION_CHALLENGES,
+    0,
+    0,
+> = sha256_round_verifier::verify;
+
 use crate::constants::ALL_DELEGATION_CIRCUITS_PARAMS;
 
 pub const BASE_LAYER_DELEGATION_CIRCUITS_VERIFICATION_PARAMETERS: &[(
@@ -103,6 +112,12 @@ pub const BASE_LAYER_DELEGATION_CIRCUITS_VERIFICATION_PARAMETERS: &[(
         ALL_DELEGATION_CIRCUITS_PARAMS[1].1,
         &ALL_DELEGATION_CIRCUITS_PARAMS[1].2,
         BIGINT_WITH_CONTROL_VERIFIER_PTR,
+    ),
+    (
+        ALL_DELEGATION_CIRCUITS_PARAMS[2].0,
+        ALL_DELEGATION_CIRCUITS_PARAMS[2].1,
+        &ALL_DELEGATION_CIRCUITS_PARAMS[2].2,
+        SYSCOIN_SHA256_ROUND_VERIFIER_PTR,
     ),
 ];
 
@@ -126,6 +141,11 @@ pub const FINAL_RECURSION_LAYER_CIRCUITS_VERIFICATION_PARAMETERS: &[(
 )] = &[];
 
 const _: () = {
+    assert!(ALL_DELEGATION_CIRCUITS_PARAMS.len() == 3);
+    assert!(ALL_DELEGATION_CIRCUITS_PARAMS[0].0 == 0x7c7);
+    assert!(ALL_DELEGATION_CIRCUITS_PARAMS[1].0 == 0x7ca);
+    assert!(ALL_DELEGATION_CIRCUITS_PARAMS[2].0 == 0x7cb);
+
     let mut t = BASE_LAYER_DELEGATION_CIRCUITS_VERIFICATION_PARAMETERS[0].0;
     let mut i = 1;
     while i < BASE_LAYER_DELEGATION_CIRCUITS_VERIFICATION_PARAMETERS.len() {

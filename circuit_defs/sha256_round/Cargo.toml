@@ -1,0 +1,22 @@
+[package]
+# SYSCOIN: Host circuit and proof regressions for SHA delegation CSR 0x7cb.
+name = "sha256_round"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+prover = { workspace = true, features = ["prover"] }
+sha256_u32 = { workspace = true }
+verifier_generator = { workspace = true }
+serde = { workspace = true }
+serde_json = "1.0"
+
+[dev-dependencies]
+sha256_round_verifier = { path = "verifier", features = ["proof_utils"] }
+verifier_common = { workspace = true, features = ["proof_utils"] }

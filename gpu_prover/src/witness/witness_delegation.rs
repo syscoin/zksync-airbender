@@ -23,6 +23,8 @@ cuda_kernel!(GenerateWitnessDelegationKernel,
 
 generate_witness_delegation_kernel!(ab_generate_bigint_with_control_witness_kernel);
 generate_witness_delegation_kernel!(ab_generate_blake2_with_compression_witness_kernel);
+// SYSCOIN: Generated CUDA witness kernel for delegation type 0x7cb.
+generate_witness_delegation_kernel!(ab_generate_sha256_round_witness_kernel);
 
 pub fn generate_witness_values_delegation(
     circuit_type: DelegationCircuitType,
@@ -63,6 +65,7 @@ pub fn generate_witness_values_delegation(
         DelegationCircuitType::Blake2WithCompression => {
             ab_generate_blake2_with_compression_witness_kernel
         }
+        DelegationCircuitType::Sha256Round => ab_generate_sha256_round_witness_kernel,
     };
     GenerateWitnessDelegationKernelFunction(kernel).launch(&config, &args)
 }

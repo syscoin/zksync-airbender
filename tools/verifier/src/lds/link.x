@@ -167,9 +167,12 @@ ASSERT(_stext + SIZEOF(.text) < ORIGIN(REGION_TEXT) + LENGTH(REGION_TEXT), "
 ERROR(riscv-rt): The .text section must be placed inside the REGION_TEXT region.
 Set _stext to an address smaller than 'ORIGIN(REGION_TEXT) + LENGTH(REGION_TEXT)'");
 
-ASSERT(_sidata + SIZEOF(.data) < ORIGIN(REGION_DATAINIT) + LENGTH(REGION_DATAINIT), "
+/* SYSCOIN: `.data` is required to be empty below. For an empty output section,
+rust-lld may report LOADADDR after the NOLOAD stack (or exactly at ROM end),
+neither of which occupies a byte in REGION_DATAINIT. */
+ASSERT(SIZEOF(.data) == 0 || _sidata + SIZEOF(.data) <= ORIGIN(REGION_DATAINIT) + LENGTH(REGION_DATAINIT), "
 ERROR(riscv-rt): The init data for .data section must be placed inside the REGION_DATAINIT region.
-Set _sidata to an address smaller than 'ORIGIN(REGION_DATAINIT) + LENGTH(REGION_DATAINIT)'");
+Set the end of init data at or before 'ORIGIN(REGION_DATAINIT) + LENGTH(REGION_DATAINIT)'");
 
 ASSERT(SIZEOF(.stack) >= (_max_hart_id + 1) * _hart_stack_size, "
 ERROR(riscv-rt): .stack section is too small for allocating stacks for all the harts.

@@ -94,6 +94,9 @@ pub fn generate_gpu_witness_evaluation_function(
 struct Cli {
     #[arg(long, default_value = "output")]
     output_dir: String,
+    /// Generate one named layout instead of the complete canonical set.
+    #[arg(long)]
+    only: Option<String>,
 }
 
 fn create_all(
@@ -173,6 +176,8 @@ const ALL_LAYOUTS: &[(
         create_bigint_with_control_delegation_layout,
         "bigint_with_control",
     ),
+    // SYSCOIN: Generate named SHA round circuit/verifier/CUDA artifacts.
+    (create_sha256_round_delegation_layout, "sha256_round"),
 ];
 
 fn main() {
@@ -180,11 +185,23 @@ fn main() {
 
     let output_dir = cli.output_dir;
 
-    for (gen_fn, prefix) in ALL_LAYOUTS.iter() {
+    let selected: Vec<_> = ALL_LAYOUTS
+        .iter()
+        .filter(|(_, prefix)| cli.only.as_deref().is_none_or(|only| only == *prefix))
+        .collect();
+    if selected.is_empty() {
+        panic!("unknown layout requested: {:?}", cli.only);
+    }
+    for (gen_fn, prefix) in selected {
         create_all(*gen_fn, prefix, &output_dir);
     }
 
     println!("Layout, quotient and witness eval fns were generated");
+
+    // All delegation setup caps are meaningful only when regenerating the complete set.
+    if cli.only.is_some() {
+        return;
+    }
 
     // All delegations circuit params
     let description = format_rust_code(&setups::generate_artifacts()).unwrap();

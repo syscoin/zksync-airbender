@@ -10,6 +10,57 @@ use worker::Worker;
 mod simple_proxy;
 pub use self::simple_proxy::SimpleWitnessProxy;
 
+/// SYSCOIN: Evaluate one row through the same memory plumbing and generated witness function used by the
+/// full evaluator. This intentionally skips global lookup multiplicity postprocessing and is
+/// suitable only for focused constraint tests.
+#[doc(hidden)]
+pub fn evaluate_witness_row_for_testing<O: Oracle<Mersenne31Field>>(
+    compiled_circuit: &CompiledCircuitArtifact<Mersenne31Field>,
+    witness_eval_fn_ptr: fn(&mut SimpleWitnessProxy<'_, O>),
+    oracle: &O,
+    table_driver: &TableDriver<Mersenne31Field>,
+    absolute_row_idx: usize,
+) -> (Vec<Mersenne31Field>, Vec<Mersenne31Field>, Vec<u32>) {
+    assert!(compiled_circuit
+        .memory_layout
+        .shuffle_ram_inits_and_teardowns
+        .is_none());
+
+    let mut witness_row = vec![Mersenne31Field::ZERO; compiled_circuit.witness_layout.total_width];
+    let mut memory_row = vec![Mersenne31Field::ZERO; compiled_circuit.memory_layout.total_width];
+    unsafe {
+        evaluate_witness_inner_static_work(
+            &mut witness_row,
+            &mut memory_row,
+            compiled_circuit,
+            oracle,
+            absolute_row_idx,
+            false,
+            &[],
+            0,
+        );
+    }
+
+    let mut scratch_space =
+        vec![Mersenne31Field::ZERO; compiled_circuit.scratch_space_size_for_witness_gen];
+    let mut multiplicity_counting_scratch = vec![0u32; table_driver.total_tables_len];
+    let mut lookup_mapping_row =
+        vec![<u32>::MAX; compiled_circuit.witness_layout.width_3_lookups.len()];
+    let mut proxy = SimpleWitnessProxy {
+        witness_row: &mut witness_row,
+        memory_row: &mut memory_row,
+        scratch_space: &mut scratch_space,
+        table_driver,
+        multiplicity_counting_scratch: &mut multiplicity_counting_scratch,
+        lookup_mapping_row: &mut lookup_mapping_row,
+        oracle,
+        absolute_row_idx,
+    };
+    witness_eval_fn_ptr(&mut proxy);
+
+    (witness_row, memory_row, lookup_mapping_row)
+}
+
 pub fn evaluate_witness<O: Oracle<Mersenne31Field>, A: GoodAllocator>(
     compiled_circuit: &CompiledCircuitArtifact<Mersenne31Field>,
     witnes_eval_fn_ptr: fn(&mut SimpleWitnessProxy<'_, O>),

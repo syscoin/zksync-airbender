@@ -17,6 +17,11 @@ type DE<F> = BasicDecodingResultWithSigns<F>;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct FullIsaMachineNoExceptionHandling;
 
+impl FullIsaMachineNoExceptionHandling {
+    // SYSCOIN: This non-delegating machine never materializes the SHA selector.
+    pub const SUPPORT_SHA_DELEGATION: bool = false;
+}
+
 impl<F: PrimeField> Machine<F> for FullIsaMachineNoExceptionHandling {
     const ASSUME_TRUSTED_CODE: bool = true;
     const OUTPUT_EXACT_EXCEPTIONS: bool = false;
@@ -97,6 +102,7 @@ impl<F: PrimeField> Machine<F> for FullIsaMachineNoExceptionHandling {
             { <Self as Machine<F>>::OUTPUT_EXACT_EXCEPTIONS },
             false,
             true,
+            { FullIsaMachineNoExceptionHandling::SUPPORT_SHA_DELEGATION },
             ROM_ADDRESS_SPACE_SECOND_WORD_BITS,
         >(
             cs,

@@ -6,6 +6,8 @@ pub(crate) fn base_isa_state_transition<
     const ASSUME_TRUSTED_CODE: bool,
     const OUTPUT_EXACT_EXCEPTIONS: bool,
     const PERFORM_DELEGATION: bool,
+    // SYSCOIN: Independent circuit capability for the CSR 0x7cb ABI constraint.
+    const SUPPORT_SHA_DELEGATION: bool,
 >(
     cs: &mut CS,
     opcodes_are_in_rom: bool,
@@ -258,6 +260,7 @@ pub(crate) fn base_isa_state_transition<
             false,
             false,
             false,
+            SUPPORT_SHA_DELEGATION,
             ASSUME_TRUSTED_CODE,
             OUTPUT_EXACT_EXCEPTIONS,
         >(

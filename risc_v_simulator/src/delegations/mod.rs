@@ -3,6 +3,7 @@ use u256_ops_with_control::U256_OPS_WITH_CONTROL_ACCESS_ID;
 
 use blake2_round_function_with_compression_mode::blake2_round_function_with_extended_control;
 use blake2_round_function_with_compression_mode::BLAKE2_ROUND_FUNCTION_WITH_EXTENDED_CONTROL_ACCESS_ID;
+use sha256_u32::SYSCOIN_SHA256_ROUND_FUNCTION_ACCESS_ID;
 
 use crate::abstractions::csr_processor::CustomCSRProcessor;
 use crate::abstractions::memory::*;
@@ -19,6 +20,8 @@ use std::ops::Range;
 pub mod unrolled;
 
 pub mod blake2_round_function_with_compression_mode;
+// SYSCOIN: Normal-state CSR 0x7cb simulator handler.
+pub mod sha256_round_function;
 pub mod u256_ops_with_control;
 
 #[derive(Clone, Copy, Debug)]
@@ -251,6 +254,7 @@ impl CustomCSRProcessor for DelegationsCSRProcessor {
         *ret_val = 0;
         match csr_index {
             BLAKE2_ROUND_FUNCTION_WITH_EXTENDED_CONTROL_ACCESS_ID => {}
+            SYSCOIN_SHA256_ROUND_FUNCTION_ACCESS_ID => {}
             U256_OPS_WITH_CONTROL_ACCESS_ID => {}
             _ => {
                 *trap = TrapReason::IllegalInstruction;
@@ -280,6 +284,16 @@ impl CustomCSRProcessor for DelegationsCSRProcessor {
         match csr_index {
             BLAKE2_ROUND_FUNCTION_WITH_EXTENDED_CONTROL_ACCESS_ID => {
                 blake2_round_function_with_extended_control(
+                    state,
+                    memory_source,
+                    tracer,
+                    mmu,
+                    rs1_value,
+                    trap,
+                );
+            }
+            SYSCOIN_SHA256_ROUND_FUNCTION_ACCESS_ID => {
+                sha256_round_function::sha256_round_function(
                     state,
                     memory_source,
                     tracer,

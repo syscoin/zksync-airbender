@@ -8,6 +8,8 @@ pub(crate) fn optimized_base_isa_state_transition<
     const OUTPUT_EXACT_EXCEPTIONS: bool,
     const PERFORM_DELEGATION: bool,
     const SUPPORT_SIGNED_MUL_DIV: bool,
+    // SYSCOIN: Independent circuit capability for the CSR 0x7cb ABI constraint.
+    const SUPPORT_SHA_DELEGATION: bool,
     const ROM_ADDRESS_SPACE_SECOND_WORD_BITS: usize,
 >(
     cs: &mut CS,
@@ -251,6 +253,7 @@ pub(crate) fn optimized_base_isa_state_transition<
             false,
             false,
             false,
+            SUPPORT_SHA_DELEGATION,
             ASSUME_TRUSTED_CODE,
             OUTPUT_EXACT_EXCEPTIONS,
         >(

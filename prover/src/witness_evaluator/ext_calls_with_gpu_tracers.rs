@@ -2,6 +2,7 @@ use super::ext_calls::*;
 use super::*;
 use crate::tracers::delegation::bigint_with_control_factory_fn;
 use crate::tracers::delegation::blake2_with_control_factory_fn;
+use crate::tracers::delegation::sha256_round_factory_fn;
 use crate::tracers::delegation::DelegationWitness;
 use crate::tracers::main_cycle_optimized::CycleData;
 use crate::tracers::oracles::delegation_oracle::DelegationCircuitOracle;
@@ -11,6 +12,7 @@ use crate::witness_evaluator::new::SimpleWitnessProxy;
 use risc_v_simulator::cycle::state_new::DelegationCSRProcessor;
 use risc_v_simulator::cycle::MachineConfig;
 use risc_v_simulator::delegations::u256_ops_with_control::U256_OPS_WITH_CONTROL_ACCESS_ID;
+use sha256_u32::SYSCOIN_SHA256_ROUND_FUNCTION_ACCESS_ID;
 
 #[allow(unused_assignments)]
 /// Runs a given binary for that many steps, to generate witness and delegation work.
@@ -101,6 +103,16 @@ where
             let factory_fn = move || {
                 bigint_with_control_factory_fn(delegation_type, num_requests_per_circuit, Global)
             };
+            factories.insert(
+                delegation_type,
+                Box::new(factory_fn) as Box<dyn Fn() -> DelegationWitness>,
+            );
+        // SYSCOIN: Route CSR 0x7cb traces through the SHA round witness factory.
+        } else if *delegation_type == SYSCOIN_SHA256_ROUND_FUNCTION_ACCESS_ID {
+            let num_requests_per_circuit = circuit.num_requests_per_circuit;
+            let delegation_type = *delegation_type as u16;
+            let factory_fn =
+                move || sha256_round_factory_fn(delegation_type, num_requests_per_circuit, Global);
             factories.insert(
                 delegation_type,
                 Box::new(factory_fn) as Box<dyn Fn() -> DelegationWitness>,
@@ -221,14 +233,7 @@ where
                     }
 
                     if equal == false {
-                        panic!(
-                            "Row {}: Full witness generation returned memory row\n{:?}\nMemory only generation returned\n{:?}",
-                            row,
-                            a
-                            .current_row_split(chunk.num_witness_columns)
-                            .1,
-                            b.current_row_ref()
-                        );
+                        panic!("Row {}: Full witness generation returned memory row\n{:?}\nMemory only generation returned\n{:?}", row, a.current_row_split(chunk.num_witness_columns).1, b.current_row_ref());
                     }
 
                     a.advance_row();

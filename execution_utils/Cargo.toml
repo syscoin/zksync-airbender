@@ -20,8 +20,13 @@ serde_json = "1.0"
 [dev-dependencies]
 prover_examples = { path = "../circuit_defs/prover_examples" }
 bincode = { version = "1.3" }
-# full_statement_verifier = { workspace = true }
-# full_statement_verifier = { path = "../full_statement_verifier" }
+# SYSCOIN: Real main+SHA delegation full-statement proof regression.
+full_statement_verifier = { path = "../full_statement_verifier", features = ["replace_csr"] }
+lib-rv32-asm = {git = "https://github.com/shamatar/lib-rv32.git"}
+sha2 = "0.10"
+
+[build-dependencies]
+sha2 = "0.10"
 
 [features]
 # Will evaluate quotient on main domain for debug
@@ -30,5 +35,9 @@ debug_satisfiable = ["prover_examples/debug_satisfiable"]
 precheck_satisfied = ["prover_examples/precheck_satisfied"]
 extended_tests = []
 # debug = ["prover_examples/precheck_satisfied", "prover_examples/debug_satisfiable"]
-default = []
+release_verifier_artifacts = []
+# Internal-only bootstrap mode used by tools/verifier/build_vk.sh. It permits
+# the generate-vk command to compile before the ROM/VK release bundle exists.
+vk_generation_without_artifacts = []
+default = ["release_verifier_artifacts"]
 # default = ["extended_tests"]

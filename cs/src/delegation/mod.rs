@@ -8,6 +8,8 @@ use field::PrimeField;
 pub mod bigint_with_control;
 pub mod blake2_round_with_extended_control;
 pub mod blake2_single_round;
+// SYSCOIN: Narrow SHA-256 round delegation for CSR 0x7cb.
+pub mod sha256_round;
 
 pub fn dump_ssa_witness_eval_form_for_delegation<F: PrimeField, T: Sized>(
     definition_fn: impl Fn(

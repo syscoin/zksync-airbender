@@ -3,6 +3,7 @@ resolver = "2"
 
 members = [
     "blake2s_u32",
+    "sha256_u32",
     "cs",
     "prover",
     "trace_holder",
@@ -48,6 +49,8 @@ members = [
     "risc_v_simulator",
     "execution_utils",
     "circuit_defs/blake2_with_compression",
+    "circuit_defs/sha256_round",
+    "circuit_defs/sha256_round/verifier",
     "circuit_defs/bigint_with_control",
     "witness_eval_generator",
     "gpu_witness_eval_generator",
@@ -56,8 +59,10 @@ members = [
 
 default-members = [
     "blake2s_u32",
+    "sha256_u32",
     "circuit_defs/bigint_with_control",
     "circuit_defs/blake2_with_compression",
+    "circuit_defs/sha256_round",
     "circuit_defs/circuit_common",
     "circuit_defs/opcode_tests",
     "circuit_defs/prover_examples",
@@ -104,6 +109,7 @@ categories = ["cryptography"]
 [workspace.dependencies]
 field = { path = "./field", default-features = false }
 blake2s_u32 = { path = "./blake2s_u32", default-features = false }
+sha256_u32 = { path = "./sha256_u32", default-features = false }
 trace_holder = { path = "./trace_holder" }
 worker = { path = "./worker" }
 fft = { path = "./fft" }
@@ -113,6 +119,8 @@ transcript = { path = "./transcript", default-features = false }
 verifier_generator = { path = "./verifier_generator" }
 circuit_common = { path = "./circuit_defs/circuit_common" }
 blake2_with_compression = { path = "./circuit_defs/blake2_with_compression" }
+sha256_round = { path = "./circuit_defs/sha256_round" }
+sha256_round_verifier = { path = "./circuit_defs/sha256_round/verifier" }
 bigint_with_control = { path = "./circuit_defs/bigint_with_control" }
 risc_v_cycles = { path = "./circuit_defs/risc_v_cycles" }
 machine_without_signed_mul_div = { path = "./circuit_defs/machine_without_signed_mul_div" }
@@ -127,7 +135,7 @@ verifier_common = { path = "./verifier_common", default-features = false }
 poseidon2 = { path = "./poseidon2", default-features = false }
 non_determinism_source = { path = "./non_determinism_source", default-features = false }
 risc_v_simulator = { path = "./risc_v_simulator", default-features = false }
-execution_utils = { path = "./execution_utils", default-features = false }
+execution_utils = { path = "./execution_utils", default-features = false, features = ["release_verifier_artifacts"] }
 witness_eval_generator = { path = "./witness_eval_generator", default-features = false }
 gpu_witness_eval_generator = { path = "./gpu_witness_eval_generator" }
 gpu_prover = { path = "./gpu_prover" }
@@ -173,3 +181,18 @@ debug = true         # Disable debug info to reduce compile time (optional, set 
 # strip = "symbols"     # Strip symbols to reduce binary size and linking time
 # panic = "unwind"      # Default panic strategy, no change needed (abort can be faster but less safe for tests)
 rpath = false         # Disable rpath (rarely needed, speeds up linking slightly)
+
+# SYSCOIN: The linked delegation/full-statement E2E uses optimized prover code, but optimizing
+# the generated verifier bodies at level 2 can take tens of minutes per crate. Level 1 matches
+# the repository's existing verifier-build convention while keeping the proof path optimized.
+[profile.test-release.package.blake2_with_compression_verifier]
+opt-level = 1
+
+[profile.test-release.package.bigint_with_control_verifier]
+opt-level = 1
+
+[profile.test-release.package.sha256_round_verifier]
+opt-level = 1
+
+[profile.test-release.package.full_statement_verifier]
+opt-level = 1

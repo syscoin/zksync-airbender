@@ -1,8 +1,20 @@
 *
 !tools/
 tools/verifier/target
+tools/verifier/*.bin
+tools/verifier/*.vk.json
+tools/verifier/artifact-manifest.sha256
+tools/verifier/artifact-manifest.tsv
+tools/verifier/build-environment.txt
+tools/verifier/build-profiles.tsv
+tools/verifier/reproduction-manifest.tsv
+tools/verifier/*.tar.gz
+tools/verifier/*.tar.gz.sha256
+tools/verifier/.artifact-publish.lock
+tools/verifier/.artifact-backup.*
 !docker/
 !Cargo.toml
+!Cargo.lock
 
 !blake2s_u32
 !circuit_defs
@@ -19,6 +31,7 @@ tools/verifier/target
 !prover
 !reduced_keccak
 !risc_v_simulator
+!sha256_u32
 !riscv_common
 !trace_holder
 !transcript

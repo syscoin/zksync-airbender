@@ -268,6 +268,8 @@ pub(crate) fn reduced_isa_state_transition<
             false,
             false,
             false,
+            // SYSCOIN: Reduced transition intentionally omits the CSR 0x7cb selector.
+            false,
             ASSUME_TRUSTED_CODE,
             OUTPUT_EXACT_EXCEPTIONS,
         >(

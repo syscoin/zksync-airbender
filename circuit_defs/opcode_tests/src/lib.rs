@@ -57,6 +57,7 @@ mod opcodes {
     mod xori;
 }
 
+use cs::cs::circuit::Circuit;
 use cs::cs::cs_reference::BasicAssembly;
 use cs::definitions::timestamp_from_chunk_cycle_and_sequence;
 use cs::machine::machine_configurations::create_csr_table_for_delegation;
@@ -66,6 +67,8 @@ use cs::machine::UNIMP_OPCODE;
 use cs::tables::LookupWrapper;
 use cs::tables::TableType;
 use field::Mersenne31Field;
+use prover::tracers::delegation::sha256_round_factory_fn;
+use prover::tracers::main_cycle_optimized::CycleData;
 use prover::tracers::main_cycle_optimized::DelegationTracingData;
 use prover::tracers::main_cycle_optimized::GPUFriendlyTracer;
 use prover::tracers::main_cycle_optimized::RamTracingData;
@@ -456,6 +459,8 @@ fn broken_tests() {
     const CSRRWI_NONDETERMINISM_OPCODE: u32 = 0x7c0150f3; // 1984
     const CSRRWI_BLAKE2ROUNDEXTENDED_OPCODE: u32 = 0x7c7150f3; // 1991
     const CSRRWI_U256BIGINTOPS_OPCODE: u32 = 0x7ca150f3; // 1994
+    const CSRRWI_SYSCOIN_SHA256ROUND_OPCODE: u32 = 0x7cb150f3; // 1995
+    const CSRRW_SYSCOIN_SHA256ROUND_NONZERO_RS1_OPCODE: u32 = 0x7cb09073;
     broken_test_impl(
         "csrrwi x1, 1984, 2",
         Some(CSRRWI_NONDETERMINISM_OPCODE),
@@ -474,6 +479,123 @@ fn broken_tests() {
         [0; 32],
         None,
     );
+    broken_test_impl(
+        "csrrwi x1, 1995, 2",
+        Some(CSRRWI_SYSCOIN_SHA256ROUND_OPCODE),
+        [0; 32],
+        None,
+    );
+    broken_test_impl(
+        "csrrw x0, 1995, x1",
+        Some(CSRRW_SYSCOIN_SHA256ROUND_NONZERO_RS1_OPCODE),
+        {
+            let mut registers = [0; 32];
+            registers[1] = 1;
+            registers[10] = 1 << 21;
+            registers
+        },
+        None,
+    );
+    broken_test_impl(
+        "csrrw x0, 1995, x1",
+        Some(CSRRW_SYSCOIN_SHA256ROUND_NONZERO_RS1_OPCODE),
+        {
+            let mut registers = [0; 32];
+            registers[1] = 1 << 16;
+            registers[10] = 1 << 21;
+            registers
+        },
+        None,
+    );
+}
+
+#[test]
+// SYSCOIN: Bind CSR 0x7cb's zero-rs1-value ABI in the real main-machine circuit.
+fn sha256_delegation_main_circuit_rejects_nonzero_rs1() {
+    const OPCODE: u32 = 0x7cb09073; // csrrw x0, 0x7cb, x1
+    const STATE_ADDRESS: u32 = 1 << 21;
+    const SCHEDULE_ADDRESS: u32 = STATE_ADDRESS + 64;
+    const ROM_BOUND: usize = 1 << 20;
+    const RAM_SIZE: usize = 1 << 22;
+    const TRACE_CYCLES: usize = 3;
+
+    let mut memory = VectorMemoryImplWithRom::new_for_byte_size(RAM_SIZE, ROM_BOUND);
+    memory.populate(0, OPCODE);
+    memory.populate(SCHEDULE_ADDRESS, 0);
+
+    let delegation_type = 0x7cb;
+    let mut factories: HashMap<
+        u16,
+        Box<dyn Fn() -> prover::tracers::delegation::DelegationWitness>,
+    > = HashMap::new();
+    factories.insert(
+        delegation_type,
+        Box::new(move || sha256_round_factory_fn(delegation_type, TRACE_CYCLES, Global)),
+    );
+    let delegation_tracer = DelegationTracingData {
+        all_per_type_logs: HashMap::new(),
+        delegation_witness_factories: factories,
+        current_per_type_logs: HashMap::new(),
+        num_traced_registers: 0,
+        mem_reads_offset: 0,
+        mem_writes_offset: 0,
+    };
+    let ram_tracer = RamTracingData::<true>::new_for_ram_size_and_rom_bound(RAM_SIZE, ROM_BOUND);
+    let initial_timestamp = timestamp_from_chunk_cycle_and_sequence(0, TRACE_CYCLES, 0);
+    let mut tracer: GPUFriendlyTracer<IMStandardIsaConfig> = GPUFriendlyTracer::new(
+        initial_timestamp,
+        ram_tracer,
+        delegation_tracer,
+        TRACE_CYCLES,
+        1,
+    );
+
+    let mut state = RiscV32StateForUnrolledProver::<IMStandardIsaConfig>::initial(ENTRY_POINT);
+    state.observable.registers[1] = 0;
+    state.observable.registers[10] = STATE_ADDRESS;
+    state.observable.registers[11] = SCHEDULE_ADDRESS;
+    state.observable.registers[12] = 0;
+    let mut non_determinism = QuasiUARTSource::default();
+    let mut csr_processor = DelegationsCSRProcessor;
+    state.cycle(
+        &mut memory,
+        &mut tracer,
+        &mut non_determinism,
+        &mut csr_processor,
+    );
+    assert_eq!(tracer.trace_chunk.per_cycle_data[0].rs1_reg_idx, 1);
+    assert_eq!(tracer.trace_chunk.per_cycle_data[0].rs1_read_value, 0);
+    assert_eq!(
+        tracer.trace_chunk.per_cycle_data[0].delegation_request,
+        delegation_type
+    );
+
+    let resolve = |trace: &CycleData<IMStandardIsaConfig>| {
+        let csr_table = create_csr_table_for_delegation::<Mersenne31Field>(
+            true,
+            IMStandardIsaConfig::ALLOWED_DELEGATION_CSRS,
+            TableType::SpecialCSRProperties.to_table_id(),
+        );
+        let oracle: MainRiscVOracle<'static, IMStandardIsaConfig> =
+            unsafe { std::mem::transmute(MainRiscVOracle { cycle_data: trace }) };
+        let mut cs = BasicAssembly::<Mersenne31Field, _>::new_with_oracle(oracle);
+        FullIsaMachineWithDelegationNoExceptionHandling::run_single_cycle::<SECOND_WORD_BITS>(
+            &[OPCODE],
+            &mut cs,
+            Some(LookupWrapper::Dimensional3(csr_table)),
+        );
+        let _ = cs.finalize();
+    };
+
+    resolve(&tracer.trace_chunk);
+
+    let mut mutated = tracer.trace_chunk.clone();
+    mutated.per_cycle_data[0].rs1_read_value = 1;
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| resolve(&mutated))).is_err());
+
+    let mut mutated = tracer.trace_chunk.clone();
+    mutated.per_cycle_data[0].rs1_read_value = 1 << 16;
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| resolve(&mutated))).is_err());
 }
 
 /// 1. simulate

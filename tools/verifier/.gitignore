@@ -2,3 +2,18 @@
 tester.bin
 tester.elf
 tester.text
+# Verifier ROMs, VKs, and provenance are distributed as a hash-pinned release
+# bundle. They are deliberately absent from the source commit.
+/*.bin
+/*.vk.json
+/artifact-manifest.sha256
+/artifact-manifest.tsv
+/build-environment.txt
+/build-profiles.tsv
+/*.tar.gz
+/*.tar.gz.sha256
+# SYSCOIN: Per-run Docker/image provenance is archived separately from the
+# deterministic source/artifact commit to avoid a commit-hash self-reference.
+reproduction-manifest.tsv
+.artifact-publish.lock/
+.artifact-backup.*/

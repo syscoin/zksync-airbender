@@ -18,6 +18,8 @@ object = "0.37"
 memmap2 = "0.9"
 inferno = "0.12"
 blake2s_u32 = { workspace = true, optional = true }
+# SYSCOIN: CSR 0x7cb simulator primitive.
+sha256_u32 = { workspace = true, optional = true }
 cs = { workspace = true, default-features = false }
 field = { workspace = true, optional = true }
 poseidon2 = { workspace = true, optional = true }
@@ -27,13 +29,14 @@ serde = { workspace = true }
 
 [dev-dependencies]
 lib-rv32-asm = {git = "https://github.com/shamatar/lib-rv32.git" }
+sha2 = { version = "0.10", features = ["compress"] }
 
 [features]
 opcode_stats = []
 cycle_marker = []
 default = ["field", "delegation"]
 # default = ["delegation"]
-delegation = ["blake2s_u32", "field", "poseidon2", "ruint"]
+delegation = ["blake2s_u32", "sha256_u32", "field", "poseidon2", "ruint"]
 
 [[bin]]
 name = "runner"

@@ -12,10 +12,16 @@ type DE<F> = BasicDecodingResultWithSigns<F>;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct FullIsaMachineWithDelegationNoExceptionHandlingNoSignedMulDiv;
 
+impl FullIsaMachineWithDelegationNoExceptionHandlingNoSignedMulDiv {
+    // SYSCOIN: Verifier/base machine stays SHA-free even though it supports other delegations.
+    pub const SUPPORT_SHA_DELEGATION: bool = false;
+}
+
 impl<F: PrimeField> Machine<F> for FullIsaMachineWithDelegationNoExceptionHandlingNoSignedMulDiv {
     const ASSUME_TRUSTED_CODE: bool = true;
     const OUTPUT_EXACT_EXCEPTIONS: bool = false;
     const USE_ROM_FOR_BYTECODE: bool = true;
+    const SUPPORT_SHA_DELEGATION: bool = Self::SUPPORT_SHA_DELEGATION;
 
     type State = MinimalStateRegistersInMemory<F>;
 
@@ -94,6 +100,9 @@ impl<F: PrimeField> Machine<F> for FullIsaMachineWithDelegationNoExceptionHandli
             { <Self as Machine<F>>::OUTPUT_EXACT_EXCEPTIONS },
             true,
             false,
+            {
+                FullIsaMachineWithDelegationNoExceptionHandlingNoSignedMulDiv::SUPPORT_SHA_DELEGATION
+            },
             ROM_ADDRESS_SPACE_SECOND_WORD_BITS,
         >(
             cs,
