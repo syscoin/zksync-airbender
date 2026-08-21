@@ -977,6 +977,101 @@ impl CarriedChainCombiner {
             &mut prover,
         )
     }
+
+    /// Continue one converged recursion-unified proof through one ordinary
+    /// unified self-recursion pass without changing its 16-word verified output.
+    ///
+    /// This is intentionally not `combine(&[artifact, artifact])`: a combined
+    /// statement computes a rolling hash and therefore changes the public output.
+    /// It is used when a singleton proof's verification already outputs the final
+    /// carried program chain, but its stored chain is one fold behind what an
+    /// app-bound downstream wrapper constrains in the proof registers.
+    pub fn continue_single(&mut self, artifact: ProofArtifact) -> Result<ProofArtifact, String> {
+        validate_trusted_verification_policy(
+            &artifact,
+            self.security_level,
+            ProofTarget::RecursionUnified,
+        )?;
+        let stored_chain = validate_carried_chains(std::slice::from_ref(&artifact))?
+            .pop()
+            .expect("one artifact was supplied");
+        let expected_keccaks = (artifact.program_bin_keccak, artifact.program_text_keccak);
+
+        self.warm_up();
+        let (setup, layouts) = self
+            .unified_setup_and_layouts
+            .as_ref()
+            .expect("warmed up above");
+        let (hash_chain, preimage) = UnrolledProgramSetup::continue_recursion_chain(
+            &setup.end_params,
+            &stored_chain.0,
+            &stored_chain.1,
+        );
+        let unified_level = RecursionLevelData {
+            setup: setup.clone(),
+            layouts: layouts.clone(),
+            hash_chain,
+            preimage,
+        };
+
+        let expected_output = verify_combine_artifact_against_level(
+            &artifact,
+            &unified_level,
+            expected_keccaks,
+            self.security_level,
+            ProofTarget::RecursionUnified,
+        )
+        .map_err(|e| format!("singleton input proof failed verification: {e}"))?;
+
+        let mut prover = match &self.backend {
+            CombinerBackendState::Cpu(cpu) => {
+                CombinedUnifiedProver::new_cpu(cpu, &self.recursion_unified)
+            }
+            #[cfg(feature = "gpu")]
+            CombinerBackendState::Gpu { host_state, .. } => CombinedUnifiedProver::new_gpu(
+                host_state.as_ref().expect("warmed up above"),
+                artifact.batch_id,
+            ),
+        };
+        let witness = flatten_proof_into_responses_for_unified_recursion(
+            &artifact.proof,
+            &unified_level.setup,
+            &unified_level.layouts,
+            false,
+        );
+        let start = Instant::now();
+        let mut proof = prover.prove_unified_pass(witness, self.security_level.model());
+        let mut timings = ProofTimingsMs::default();
+        timings.unified_recursion_ms.push(elapsed_ms(start));
+        proof.recursion_chain_hash = Some(unified_level.hash_chain);
+        proof.recursion_chain_preimage = Some(unified_level.preimage);
+        let continued = finalize_artifact(
+            self.security_level,
+            ProofTarget::RecursionUnified,
+            prover.kind(),
+            artifact.batch_id,
+            artifact.cycles,
+            expected_keccaks,
+            timings,
+            proof,
+        );
+
+        let output = verify_combine_artifact_against_level(
+            &continued,
+            &unified_level,
+            expected_keccaks,
+            self.security_level,
+            ProofTarget::RecursionUnified,
+        )
+        .map_err(|e| format!("continued singleton proof failed verification: {e}"))?;
+        if output != expected_output {
+            return Err(format!(
+                "continued singleton output {:?} does not match input output {:?}",
+                output, expected_output
+            ));
+        }
+        Ok(continued)
+    }
 }
 
 /// The unified-layer prover used by the combine flow. Both backends prove the
@@ -2059,6 +2154,20 @@ mod recursion_binding_tests {
         .expect_err("combining must require at least two artifacts");
         assert!(
             err.contains("at least two proof artifacts"),
+            "unexpected error message: {err}"
+        );
+    }
+
+    #[test]
+    fn continue_single_rejects_untrusted_metadata_before_warmup() {
+        let artifact = minimal_artifact(SecurityLevel::Security80, ProofTarget::Base);
+        let mut combiner =
+            CarriedChainCombiner::new_cpu(SecurityLevel::Security100, CpuConfig::default());
+        let err = combiner
+            .continue_single(artifact)
+            .expect_err("singleton continuation must enforce the combiner's trusted policy");
+        assert!(
+            err.contains("does not match requested security level"),
             "unexpected error message: {err}"
         );
     }
