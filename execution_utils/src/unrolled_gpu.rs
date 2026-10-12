@@ -1,4 +1,5 @@
 use crate::get_padded_binary;
+use crate::setup_summaries::ProgramSetupSummaries;
 use crate::unified_recursion_target_family_proofs;
 use crate::unrolled::{
     compute_setup_for_machine_configuration, flatten_proof_into_responses_for_unrolled_recursion,
@@ -13,7 +14,7 @@ use gpu_prover::{
 use setups::{
     binary_u8_to_u32, get_unified_circuit_artifact_for_machine_type,
     get_unrolled_circuits_artifacts_for_machine_type, pad_bytecode_bytes_for_proving,
-    pad_bytecode_for_proving, read_binary, CompiledCircuitsSet,
+    pad_bytecode_for_proving, CompiledCircuitsSet,
 };
 use verifier_common::security_100::Security100Marker;
 use verifier_common::security_80::Security80Marker;
@@ -166,6 +167,91 @@ impl UnrolledProver {
         prover_configuration: ExecutionProverConfiguration,
         max_level: UnrolledProverLevel,
     ) -> Self {
+        Self::new_inner(
+            security,
+            path_without_bin,
+            prover_configuration,
+            max_level,
+            None,
+            None,
+        )
+        .expect("failed to initialize prover")
+    }
+
+    /// Use authenticated compact summaries while retaining normal GPU precomputations.
+    pub fn new_with_setup_summaries(
+        security: SecurityModel,
+        path_without_bin: &String,
+        prover_configuration: ExecutionProverConfiguration,
+        max_level: UnrolledProverLevel,
+        summaries: ProgramSetupSummaries,
+    ) -> Result<Self, String> {
+        if max_level != UnrolledProverLevel::RecursionUnified {
+            return Err("setup summaries require recursion-unified target".into());
+        }
+        Self::new_inner(
+            security,
+            path_without_bin,
+            prover_configuration,
+            max_level,
+            Some(summaries),
+            None,
+        )
+    }
+
+    /// Consume the exact bin/text bytes authenticated by the caller, without reopening files.
+    pub fn new_with_setup_summaries_and_program_bytes(
+        security: SecurityModel,
+        path_without_bin: &String,
+        prover_configuration: ExecutionProverConfiguration,
+        max_level: UnrolledProverLevel,
+        summaries: ProgramSetupSummaries,
+        base_binary: Vec<u8>,
+        base_text: Vec<u8>,
+    ) -> Result<Self, String> {
+        if max_level != UnrolledProverLevel::RecursionUnified {
+            return Err("setup summaries require recursion-unified target".into());
+        }
+        Self::new_inner(
+            security,
+            path_without_bin,
+            prover_configuration,
+            max_level,
+            Some(summaries),
+            Some((base_binary, base_text)),
+        )
+    }
+
+    fn new_inner(
+        security: SecurityModel,
+        path_without_bin: &String,
+        prover_configuration: ExecutionProverConfiguration,
+        max_level: UnrolledProverLevel,
+        summaries: Option<ProgramSetupSummaries>,
+        program_bytes: Option<(Vec<u8>, Vec<u8>)>,
+    ) -> Result<Self, String> {
+        // Read once: validation and GPU setup must consume the same binary bytes.
+        let bin_path = format!("{}.bin", path_without_bin);
+        let text_path = format!("{}.text", path_without_bin);
+        let (binary, text) = match program_bytes {
+            Some(bytes) => bytes,
+            None => (
+                std::fs::read(&bin_path).map_err(|e| format!("{bin_path}: {e}"))?,
+                std::fs::read(&text_path).map_err(|e| format!("{text_path}: {e}"))?,
+            ),
+        };
+        for (name, bytes) in [("binary", &binary), ("text", &text)] {
+            if bytes.len() % 4 != 0
+                || bytes.len() > riscv_transpiler::common_constants::ROM_WORD_SIZE * 4
+            {
+                return Err(format!("invalid program {name} length"));
+            }
+        }
+        if let Some(summaries) = &summaries {
+            summaries.validate(security, &binary)?;
+        }
+        let binary_u32 = binary_u8_to_u32(&binary);
+        let text_u32 = binary_u8_to_u32(&text);
         let mut prover = match security {
             SecurityModel::Security80 => RuntimeExecutionProver::Security80(ExecutionProver::<
                 Security80Marker,
@@ -179,10 +265,6 @@ impl UnrolledProver {
         let mut level_data = BTreeMap::new();
 
         {
-            let bin_path = format!("{}.bin", path_without_bin);
-            let text_path = format!("{}.text", path_without_bin);
-            let (binary, binary_u32) = read_binary(Path::new(&bin_path));
-            let (text, text_u32) = read_binary(Path::new(&text_path));
             prover.add_binary(
                 UnrolledProverLevel::Base as usize,
                 ExecutionKind::Unrolled,
@@ -191,16 +273,22 @@ impl UnrolledProver {
                 text_u32.clone(),
                 None,
             );
-            info!("Computing base layer setup");
             let mut padded_binary = binary.clone();
             pad_bytecode_bytes_for_proving(&mut padded_binary);
             let mut padded_text = text.clone();
             pad_bytecode_bytes_for_proving(&mut padded_text);
             let mut padded_binary_u32 = binary_u32.clone();
             pad_bytecode_for_proving(&mut padded_binary_u32);
-            let setup = compute_setup_for_machine_configuration::<
-                IMStandardIsaConfigWithUnsignedMulDiv,
-            >(&padded_binary, &padded_text);
+            let setup = match &summaries {
+                Some(summaries) => summaries.base.clone(),
+                None => {
+                    info!("Computing base layer setup");
+                    compute_setup_for_machine_configuration::<IMStandardIsaConfigWithUnsignedMulDiv>(
+                        &padded_binary,
+                        &padded_text,
+                    )
+                }
+            };
             let compiled_layouts = get_unrolled_circuits_artifacts_for_machine_type::<
                 IMStandardIsaConfigWithUnsignedMulDiv,
             >(&padded_binary_u32);
@@ -242,16 +330,21 @@ impl UnrolledProver {
                 text_u32.clone(),
                 None,
             );
-            info!("Computing recursion in unrolled layer setup");
             let mut padded_binary = binary.clone();
             pad_bytecode_bytes_for_proving(&mut padded_binary);
             let mut padded_text = text.clone();
             pad_bytecode_bytes_for_proving(&mut padded_text);
             let mut padded_binary_u32 = binary_u32.clone();
             pad_bytecode_for_proving(&mut padded_binary_u32);
-            let setup = compute_setup_for_machine_configuration::<
-                IWithoutByteAccessIsaConfigWithDelegation,
-            >(&padded_binary, &padded_text);
+            let setup = match &summaries {
+                Some(summaries) => summaries.recursion_unrolled.clone(),
+                None => {
+                    info!("Computing recursion in unrolled layer setup");
+                    compute_setup_for_machine_configuration::<
+                        IWithoutByteAccessIsaConfigWithDelegation,
+                    >(&padded_binary, &padded_text)
+                }
+            };
             let compiled_layouts = get_unrolled_circuits_artifacts_for_machine_type::<
                 IWithoutByteAccessIsaConfigWithDelegation,
             >(&padded_binary_u32);
@@ -297,16 +390,21 @@ impl UnrolledProver {
                 text_u32.clone(),
                 None,
             );
-            info!("Computing recursion in unified layer setup");
             let mut padded_binary = binary.clone();
             pad_bytecode_bytes_for_proving(&mut padded_binary);
             let mut padded_text = text.clone();
             pad_bytecode_bytes_for_proving(&mut padded_text);
             let mut padded_binary_u32 = binary_u32.clone();
             pad_bytecode_for_proving(&mut padded_binary_u32);
-            let setup = compute_unified_setup_for_machine_configuration::<
-                IWithoutByteAccessIsaConfigWithDelegation,
-            >(&padded_binary, &padded_text);
+            let setup = match &summaries {
+                Some(summaries) => summaries.recursion_unified.clone(),
+                None => {
+                    info!("Computing recursion in unified layer setup");
+                    compute_unified_setup_for_machine_configuration::<
+                        IWithoutByteAccessIsaConfigWithDelegation,
+                    >(&padded_binary, &padded_text)
+                }
+            };
             let compiled_layouts = get_unified_circuit_artifact_for_machine_type::<
                 IWithoutByteAccessIsaConfigWithDelegation,
             >(&padded_binary_u32);
@@ -329,11 +427,11 @@ impl UnrolledProver {
             level_data.insert(UnrolledProverLevel::RecursionUnified, data);
         }
 
-        Self {
+        Ok(Self {
             max_level,
             level_data,
             prover,
-        }
+        })
     }
 
     pub fn prove(

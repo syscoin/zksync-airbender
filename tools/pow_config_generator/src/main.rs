@@ -10,12 +10,47 @@ pub mod pow_computation;
 pub mod soundcalc;
 use pow_computation::*;
 
+fn max_number_of_cycles_log2() -> usize {
+    let max_cycles = verifier_common::cs::one_row_compiler::MAX_NUMBER_OF_CYCLES;
+    // The declared timestamp bound is exact. Do not silently round a future bound down.
+    assert!(max_cycles.is_power_of_two());
+    max_cycles.ilog2() as usize
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shared_pow_uses_the_declared_cycle_exponent() {
+        assert_eq!(
+            verifier_common::cs::one_row_compiler::MAX_NUMBER_OF_CYCLES,
+            1u64 << 36,
+        );
+        let cycles_log2 = max_number_of_cycles_log2();
+        assert_eq!(cycles_log2, 36);
+        let field_log2 = verifier_common::MERSENNE31QUARTIC_SIZE_LOG2;
+        assert_eq!(pow_bits_for_cq_lookup(100, cycles_log2, field_log2), 17);
+        assert_eq!(
+            pow_bits_for_memory_argument(100, cycles_log2, field_log2),
+            14
+        );
+        assert_eq!(
+            pow_bits_for_memory_and_delegation(100, cycles_log2, field_log2),
+            17,
+        );
+        assert_eq!(
+            pow_bits_for_memory_and_delegation(80, cycles_log2, field_log2),
+            0,
+        );
+    }
+}
+
 fn main() {
     println!("Running PoW Config Generator");
 
     let challenge_field_size = verifier_common::MERSENNE31QUARTIC_SIZE_LOG2;
-    let max_number_of_cycles =
-        verifier_common::cs::one_row_compiler::MAX_NUMBER_OF_CYCLES.leading_zeros() as usize;
+    let max_number_of_cycles = max_number_of_cycles_log2();
 
     let pow_bits_for_queries_for_80 = verifier_common::security_80::POW_BITS;
     let pow_bits_for_queries_for_100 = verifier_common::security_100::POW_BITS;

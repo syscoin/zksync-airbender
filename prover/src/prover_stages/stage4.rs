@@ -575,11 +575,13 @@ pub fn prover_stage_4<const N: usize, A: GoodAllocator, T: MerkleTreeConstructor
                 let mut deep_poly_trace_view = deep_poly_trace.row_view(range.clone());
                 let mut z_minus_omega_powers_view = z_minus_omega_powers_values.row_view(range);
                 let omega_inv = twiddles.omega_inv;
+                let omega = twiddles.omega;
 
                 Worker::smart_spawn(
                     scope,
                     thread_idx == geometry.len() - 1,
                     move |_| {
+                    let mut omega_power = omega.pow(chunk_start as u32);
                     for _i in 0..chunk_size {
                         let (exec_trace_view_row, exec_trace_view_next_row) =
                             exec_trace_view.current_and_next_row_ref();
@@ -791,6 +793,10 @@ pub fn prover_stage_4<const N: usize, A: GoodAllocator, T: MerkleTreeConstructor
 
                         let mut accumulated = contribution_at_z;
                         accumulated.add_assign(&contribution_at_z_omega);
+                        // A linear opening lowers the degree by one. Restore it before FRI
+                        // so a degree-N source cannot fit the degree-<N codeword bound.
+                        accumulated.mul_assign_by_base(&omega_power);
+                        omega_power.mul_assign(&omega);
 
                         // write back accumulated value
                         deep_poly_trace_view_row_ptr.write(accumulated);
@@ -811,13 +817,13 @@ pub fn prover_stage_4<const N: usize, A: GoodAllocator, T: MerkleTreeConstructor
     dbg!(now.elapsed());
 
     if DEBUG_QUOTIENT == true {
-        // check that we have highest monomial coefficient 0
+        // X times an honest DEEP quotient has zero constant coefficient.
         let mut tmp = deep_poly_trace.clone();
         parallel_row_major_full_line_partial_ifft(&mut tmp, &twiddles.inverse_twiddles, worker);
 
-        // NOTE: output is bitreversed, but we are interested at the highest monomial coefficient,
-        // so it stays at the same place
-        let row_view = tmp.row_view((trace_len - 1)..trace_len);
+        // The constant coefficient stays at index zero under bit reversal. A nonzero
+        // value also detects wrapping a degree-N lifted term on the main subgroup.
+        let row_view = tmp.row_view(0..1);
         let row = row_view.current_row_ref();
         for el in row {
             assert!(el.is_zero());

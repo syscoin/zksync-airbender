@@ -852,6 +852,9 @@ pub unsafe fn verify_with_configuration<
             };
 
             let mut expected_value = expected_value;
+            // Restore the degree lost by the linear opening before FRI. Use the
+            // full coset point, before folding mutates it or applies tau scaling.
+            expected_value.mul_assign_by_base(&evaluation_point);
             let mut evaluation_point = evaluation_point;
 
             let mut domain_size_log_2 = TRACE_LEN_LOG2;

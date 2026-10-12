@@ -279,6 +279,7 @@ fn apply_reduced_machine_circuit<
             &decoder_output,
             &flags_source,
             &mut opt_ctx,
+            Some(inputs.execute),
         );
         application_results.push(application_result);
     };

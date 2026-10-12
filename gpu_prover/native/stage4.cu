@@ -168,7 +168,9 @@ EXTERN __launch_bounds__(512, 2) __global__ void ab_deep_quotient_kernel(
   acc_z = e4::mul(acc_z, denom_z);
   acc_z_omega = e4::mul(acc_z_omega, denom_z_omega);
 
-  quotient.set(e4::add(acc_z, acc_z_omega));
+  // Restore the degree lost by opening before constructing the FRI codeword.
+  const e2 x = get_power_of_w(raw_row << (CIRCLE_GROUP_LOG_ORDER - log_n), false);
+  quotient.set(e4::mul(e4::add(acc_z, acc_z_omega), x));
 }
 
 } // namespace airbender::stage4

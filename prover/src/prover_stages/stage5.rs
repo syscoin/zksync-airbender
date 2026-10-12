@@ -100,20 +100,20 @@ pub fn prover_stage_5<const N: usize, A: GoodAllocator, T: MerkleTreeConstructor
         }
 
         assert_eq!(
-            *monomials_from_main_domain.0.last().unwrap(),
+            *monomials_from_main_domain.0.first().unwrap(),
             Mersenne31Complex::ZERO
         );
         assert_eq!(
-            *monomials_from_main_domain.1.last().unwrap(),
+            *monomials_from_main_domain.1.first().unwrap(),
             Mersenne31Complex::ZERO
         );
 
         assert_eq!(
-            *monomials_from_coset.0.last().unwrap(),
+            *monomials_from_coset.0.first().unwrap(),
             Mersenne31Complex::ZERO
         );
         assert_eq!(
-            *monomials_from_coset.1.last().unwrap(),
+            *monomials_from_coset.1.first().unwrap(),
             Mersenne31Complex::ZERO
         );
     }

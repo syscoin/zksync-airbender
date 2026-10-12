@@ -1497,6 +1497,27 @@ unsafe fn evaluate_every_row_except_last(
             let contribution = {
                 let individual_term = {
                     let mut individual_term = {
+                        let mut a = *(memory.get_unchecked(27usize));
+                        let b = *(memory.get_unchecked(30usize));
+                        field_ops::mul_assign(&mut a, &b);
+                        field_ops::negate(&mut a);
+                        a
+                    };
+                    {
+                        let a = *(memory.get_unchecked(27usize));
+                        field_ops::add_assign(&mut individual_term, &a);
+                    }
+                    individual_term
+                };
+                individual_term
+            };
+            field_ops::add_assign(&mut accumulated_contribution, &contribution);
+        }
+        {
+            field_ops::mul_assign(&mut accumulated_contribution, &quotient_alpha);
+            let contribution = {
+                let individual_term = {
+                    let mut individual_term = {
                         let mut a = *(memory.get_unchecked(9usize));
                         let b = *(memory.get_unchecked(27usize));
                         field_ops::mul_assign(&mut a, &b);

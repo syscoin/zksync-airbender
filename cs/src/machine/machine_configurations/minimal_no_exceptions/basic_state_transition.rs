@@ -276,6 +276,7 @@ pub(crate) fn reduced_isa_state_transition<
             &decoder_output,
             &flags_source,
             &mut opt_ctx,
+            None,
         );
         application_results.push(application_result);
     };

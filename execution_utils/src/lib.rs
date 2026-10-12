@@ -19,6 +19,8 @@ mod proofs;
 #[cfg(feature = "verifier_binaries")]
 mod recursion;
 mod recursion_strategy;
+#[cfg(feature = "verifier_binaries")]
+pub mod setup_summaries;
 mod verifiers;
 
 pub mod unified_circuit;

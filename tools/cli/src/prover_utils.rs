@@ -1,4 +1,5 @@
 use clap::ValueEnum;
+use execution_utils::setup_summaries::ProgramSetupSummaries;
 use execution_utils::setups::{
     binary_u8_to_u32, get_unified_circuit_artifact_for_machine_type,
     get_unrolled_circuits_artifacts_for_machine_type, pad_bytecode_bytes_for_proving,
@@ -301,6 +302,49 @@ pub fn default_backend_for_build() -> ProverBackend {
 
 impl ProgramProver {
     pub fn new(source: ProgramSource, config: ProgramProverConfig) -> Result<Self, String> {
+        Self::new_inner(source, config, None, None)
+    }
+
+    /// Inject authenticated summaries for GPU recursion-unified proving only.
+    /// This skips host CPU cap derivation, not GPU proving precomputations.
+    pub fn new_with_setup_summaries(
+        source: ProgramSource,
+        config: ProgramProverConfig,
+        summaries: ProgramSetupSummaries,
+    ) -> Result<Self, String> {
+        if config.backend != ProverBackend::Gpu || config.target != ProofTarget::RecursionUnified {
+            return Err("setup summaries require GPU backend and recursion-unified target".into());
+        }
+        Self::new_inner(source, config, Some(summaries), None)
+    }
+
+    /// Use the exact bytes authenticated with the summaries, without reopening source files.
+    pub fn new_with_setup_summaries_and_program_bytes(
+        source: ProgramSource,
+        config: ProgramProverConfig,
+        summaries: ProgramSetupSummaries,
+        base_binary: Vec<u8>,
+        base_text: Vec<u8>,
+    ) -> Result<Self, String> {
+        if config.backend != ProverBackend::Gpu || config.target != ProofTarget::RecursionUnified {
+            return Err("setup summaries require GPU backend and recursion-unified target".into());
+        }
+        Self::new_inner(
+            source,
+            config,
+            Some(summaries),
+            Some((base_binary, base_text)),
+        )
+    }
+
+    fn new_inner(
+        source: ProgramSource,
+        config: ProgramProverConfig,
+        summaries: Option<ProgramSetupSummaries>,
+        program_bytes: Option<(Vec<u8>, Vec<u8>)>,
+    ) -> Result<Self, String> {
+        #[cfg(not(feature = "gpu"))]
+        let _ = (&summaries, &program_bytes);
         if config.target == ProofTarget::RecursionCombined {
             return Err(
                 "recursion-combined proofs are produced from existing recursion-unified \
@@ -330,12 +374,34 @@ impl ProgramProver {
                         }
                     };
 
-                    ProgramProverInner::Gpu(UnrolledProver::new(
-                        config.security_level.model(),
-                        &path_without_bin,
-                        prover_configuration,
-                        max_level,
-                    ))
+                    let prover = match (summaries, program_bytes) {
+                        (Some(summaries), Some((binary, text))) => {
+                            UnrolledProver::new_with_setup_summaries_and_program_bytes(
+                                config.security_level.model(),
+                                &path_without_bin,
+                                prover_configuration,
+                                max_level,
+                                summaries,
+                                binary,
+                                text,
+                            )?
+                        }
+                        (Some(summaries), None) => UnrolledProver::new_with_setup_summaries(
+                            config.security_level.model(),
+                            &path_without_bin,
+                            prover_configuration,
+                            max_level,
+                            summaries,
+                        )?,
+                        (None, None) => UnrolledProver::new(
+                            config.security_level.model(),
+                            &path_without_bin,
+                            prover_configuration,
+                            max_level,
+                        ),
+                        (None, Some(_)) => unreachable!("program bytes require summaries"),
+                    };
+                    ProgramProverInner::Gpu(prover)
                 }
                 #[cfg(not(feature = "gpu"))]
                 {
