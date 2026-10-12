@@ -109,6 +109,7 @@ cuda_kernel!(
     stage_2_memory_grand_product_offset: u32,
     log_n: u32,
     bit_reversed: bool,
+    lift_offset: *const E4,
 );
 
 deep_quotient!(ab_deep_quotient_kernel);
@@ -167,6 +168,7 @@ pub fn compute_deep_quotient_on_main_domain(
     denom_at_z: &DeviceSlice<E4>,
     scratch_e4: &DeviceSlice<E4>,
     challenges_times_evals_sums: &DeviceVariable<ChallengesTimesEvalsSums>,
+    lift_offset: &DeviceVariable<E4>,
     quotient: &mut (impl DeviceMatrixChunkMutImpl<BF> + ?Sized),
     cached_data: &ProverCachedData,
     circuit: &CompiledCircuitArtifact<BF>,
@@ -338,6 +340,7 @@ pub fn compute_deep_quotient_on_main_domain(
         stage_2_memory_grand_product_offset as u32,
         log_n,
         bit_reversed,
+        lift_offset.as_ptr(),
     );
     DeepQuotientFunction(ab_deep_quotient_kernel).launch(&config, &args)
 }
@@ -396,6 +399,7 @@ pub(crate) mod tests {
         let evals = &prover_data.deep_poly_result.values_at_z;
         let z = prover_data.deep_poly_result.z;
         let alpha = prover_data.deep_poly_result.alpha;
+        let lift_offset = prover_data.deep_poly_result.lift_offset;
         // Repackage row-major data as column-major for GPU
         let domain_index = 0;
         let num_setup_cols = circuit.setup_layout.total_width;
@@ -434,6 +438,7 @@ pub(crate) mod tests {
         let mut d_alloc_composition_col = DeviceAllocation::<BF>::alloc(4 * domain_size).unwrap();
         let mut d_z = DeviceAllocation::<E4>::alloc(1).unwrap();
         let mut d_denom_at_z = DeviceAllocation::<E4>::alloc(domain_size).unwrap();
+        let mut d_lift_offset = DeviceAllocation::<E4>::alloc(1).unwrap();
         let num_terms_at_z = circuit.num_openings_at_z();
         let num_terms_at_z_omega = circuit.num_openings_at_z_omega();
         let num_terms_total = num_terms_at_z + num_terms_at_z_omega;
@@ -483,6 +488,7 @@ pub(crate) mod tests {
             HostAllocation::<BF>::alloc(4 * domain_size, CudaHostAllocFlags::DEFAULT).unwrap();
         memory_copy_async(&mut d_alloc_composition_col, &h_composition_col, &stream).unwrap();
         memory_copy_async(&mut d_z, &[z], &stream).unwrap();
+        memory_copy_async(&mut d_lift_offset, &[lift_offset], &stream).unwrap();
         let mut d_composition_col = DeviceMatrixMut::new(&mut d_alloc_composition_col, domain_size);
         let mut d_quotient = DeviceMatrixMut::new(&mut d_alloc_quotient, domain_size);
         for &bit_reversed in [false, true].iter() {
@@ -544,6 +550,7 @@ pub(crate) mod tests {
                 &d_denom_at_z,
                 &d_e4_scratch,
                 &d_challenges_times_evals_sums[0],
+                &d_lift_offset[0],
                 &mut d_quotient,
                 &cached_data,
                 &circuit,

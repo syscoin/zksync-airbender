@@ -24,8 +24,10 @@ use crate::prover::pow::search_pow_challenge;
 use crate::prover::precomputations::PRECOMPUTATIONS;
 use blake2s_u32::BLAKE2S_DIGEST_SIZE_U32_WORDS;
 use cs::one_row_compiler::CompiledCircuitArtifact;
+use era_cudart::event::{CudaEvent, CudaEventCreateFlags};
 use era_cudart::memory::memory_copy_async;
 use era_cudart::result::CudaResult;
+use era_cudart::stream::CudaStream;
 use field::{Field, FieldExtension};
 use itertools::Itertools;
 use prover::definitions::FoldingDescription;
@@ -41,6 +43,23 @@ pub(crate) struct StageFourOutput {
     pub quotient_z_pow_challenge: HostAllocation<u64>,
     pub(crate) values_at_z: HostAllocation<[E4]>,
     pub deep_poly_alpha_pow_challenge: HostAllocation<u64>,
+}
+
+struct ChallengeHostBuffers<'a> {
+    alpha: HostAllocation<E4>,
+    lift_offset: HostAllocation<E4>,
+    scratch: HostAllocation<[E4]>,
+    sums: HostAllocation<ChallengesTimesEvalsSums>,
+    stream: &'a CudaStream,
+    uploads_pending: bool,
+}
+
+impl Drop for ChallengeHostBuffers<'_> {
+    fn drop(&mut self) {
+        if self.uploads_pending {
+            let _ = self.stream.synchronize();
+        }
+    }
 }
 
 impl StageFourOutput {
@@ -223,32 +242,54 @@ impl StageFourOutput {
             callbacks,
             context,
         )?;
-        let mut alpha = unsafe { context.alloc_host_uninit::<E4>() };
-        let alpha_accessor = alpha.get_mut_accessor();
-        let get_alpha = move || unsafe {
+        let num_terms_at_z = circuit.num_openings_at_z();
+        let num_terms_at_z_omega = circuit.num_openings_at_z_omega();
+        let num_terms_total = num_terms_at_z + num_terms_at_z_omega;
+        let mut challenge_host_buffers = ChallengeHostBuffers {
+            alpha: unsafe { context.alloc_host_uninit::<E4>() },
+            lift_offset: unsafe { context.alloc_host_uninit::<E4>() },
+            scratch: unsafe { context.alloc_host_uninit_slice(num_terms_total) },
+            sums: unsafe { context.alloc_host_uninit::<ChallengesTimesEvalsSums>() },
+            stream,
+            uploads_pending: true,
+        };
+        let alpha_accessor = challenge_host_buffers.alpha.get_mut_accessor();
+        let lift_offset_accessor = challenge_host_buffers.lift_offset.get_mut_accessor();
+        let h_e4_scratch_accessor = challenge_host_buffers.scratch.get_mut_accessor();
+        let h_challenges_times_evals_accessor = challenge_host_buffers.sums.get_mut_accessor();
+        let get_alpha_and_lift_offset = move || unsafe {
             let num_entries_from_pow = if deep_poly_alpha_pow_bits == 0 {
                 0usize
             } else {
                 1
             };
             let num_entries =
-                (num_entries_from_pow + 1 * 4).next_multiple_of(BLAKE2S_DIGEST_SIZE_U32_WORDS);
+                (num_entries_from_pow + 2 * 4).next_multiple_of(BLAKE2S_DIGEST_SIZE_U32_WORDS);
             let mut transcript_challenges = vec![0u32; num_entries];
             Transcript::draw_randomness(seed_accessor.get_mut(), &mut transcript_challenges);
             if deep_poly_alpha_pow_bits != 0 {
                 // Skip first challenge used for pow
                 transcript_challenges.remove(0);
             }
-            let alpha_coeffs = transcript_challenges
-                .as_chunks::<4>()
-                .0
-                .iter()
+            let mut quartic_challenges = transcript_challenges.as_chunks::<4>().0.iter();
+            let alpha_coeffs = quartic_challenges
                 .next()
                 .unwrap()
                 .map(BF::from_nonreduced_u32);
             alpha_accessor.set(E4::from_coeffs_in_base(&alpha_coeffs));
+            let lift_coeffs = quartic_challenges
+                .next()
+                .unwrap()
+                .map(BF::from_nonreduced_u32);
+            lift_offset_accessor.set(E4::from_coeffs_in_base(&lift_coeffs));
         };
-        callbacks.schedule(get_alpha, stream)?;
+        callbacks.schedule(get_alpha_and_lift_offset, stream)?;
+        let mut d_lift_offset = context.alloc(1, AllocationPlacement::BestFit)?;
+        memory_copy_async(
+            &mut d_lift_offset,
+            slice::from_ref(unsafe { lift_offset_accessor.get() }),
+            stream,
+        )?;
         let mut d_denom_at_z = context.alloc(trace_len, AllocationPlacement::BestFit)?;
         compute_deep_denom_at_z_on_main_domain(
             &mut d_denom_at_z,
@@ -257,14 +298,6 @@ impl StageFourOutput {
             false,
             &stream,
         )?;
-        let num_terms_at_z = circuit.num_openings_at_z();
-        let num_terms_at_z_omega = circuit.num_openings_at_z_omega();
-        let num_terms_total = num_terms_at_z + num_terms_at_z_omega;
-        let mut h_e4_scratch = unsafe { context.alloc_host_uninit_slice(num_terms_total) };
-        let h_e4_scratch_accessor = h_e4_scratch.get_mut_accessor();
-        let mut h_challenges_times_evals =
-            unsafe { context.alloc_host_uninit::<ChallengesTimesEvalsSums>() };
-        let h_challenges_times_evals_accessor = h_challenges_times_evals.get_mut_accessor();
         let omega_inv = PRECOMPUTATIONS.omegas_inv[log_domain_size as usize];
         let get_challenges = move || unsafe {
             prepare_async_challenge_data(
@@ -290,6 +323,9 @@ impl StageFourOutput {
             slice::from_ref(unsafe { h_challenges_times_evals_accessor.get() }),
             stream,
         )?;
+        let challenge_upload_complete =
+            CudaEvent::create_with_flags(CudaEventCreateFlags::DISABLE_TIMING)?;
+        challenge_upload_complete.record(stream)?;
         let mut d_quotient = DeviceMatrixMut::new(&mut vectorized_ldes[COSET_INDEX], trace_len);
         compute_deep_quotient_on_main_domain(
             &d_setup_cols,
@@ -300,6 +336,7 @@ impl StageFourOutput {
             &d_denom_at_z,
             &mut d_e4_scratch,
             &d_challenges_times_evals[0],
+            &d_lift_offset[0],
             &mut d_quotient,
             &cached_data,
             &circuit,
@@ -356,6 +393,9 @@ impl StageFourOutput {
         trace_holder.tree_caps = Some(tree_caps);
         let update_seed_fn = trace_holder.get_update_seed_fn(seed);
         callbacks.schedule(update_seed_fn, stream)?;
+        // Local pinned challenge buffers can be reused only after their queued copies finish.
+        challenge_upload_complete.synchronize()?;
+        challenge_host_buffers.uploads_pending = false;
         let result = Self {
             trace_holder,
             quotient_z_pow_challenge,
