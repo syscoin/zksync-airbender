@@ -83,9 +83,6 @@ pub fn prover_stage_5<const N: usize, A: GoodAllocator, T: MerkleTreeConstructor
             }
         }
 
-        // assert_eq!(*c0.last().unwrap(), Mersenne31Complex::ZERO);
-        // assert_eq!(*c1.last().unwrap(), Mersenne31Complex::ZERO);
-
         (c0, c1)
     };
 
@@ -93,29 +90,11 @@ pub fn prover_stage_5<const N: usize, A: GoodAllocator, T: MerkleTreeConstructor
         let monomials_from_main_domain = interpolate_fn(&stage_4_output.ldes[0]);
         let monomials_from_coset = interpolate_fn(&stage_4_output.ldes[1]);
 
-        // assert_eq!(monomials_from_main_domain, monomials_from_coset);
-
+        // The affine lift can populate both edge coefficients, but the cosets
+        // must still interpolate to the same polynomial.
         if monomials_from_main_domain != monomials_from_coset {
             panic!("DEEP quotient poly is most likely malformed, evaluations on main and other domains result in different monomials");
         }
-
-        assert_eq!(
-            *monomials_from_main_domain.0.last().unwrap(),
-            Mersenne31Complex::ZERO
-        );
-        assert_eq!(
-            *monomials_from_main_domain.1.last().unwrap(),
-            Mersenne31Complex::ZERO
-        );
-
-        assert_eq!(
-            *monomials_from_coset.0.last().unwrap(),
-            Mersenne31Complex::ZERO
-        );
-        assert_eq!(
-            *monomials_from_coset.1.last().unwrap(),
-            Mersenne31Complex::ZERO
-        );
     }
 
     // Now we should compute a schedule, assuming that we have rather large number of queries.

@@ -3,7 +3,8 @@ use crate::circuit_type::{CircuitType, UnrolledCircuitType};
 use crate::execution::messages::SimulationResult;
 use crate::execution::messages::{InitsAndTeardownsData, WorkerResult};
 use crate::execution::simulation_runner::{
-    LockedBoxedMemoryHolder, LockedBoxedTraceChunk, SimulationRunner, Snapshot,
+    EmptyInitsAndTeardownsStreamer, LockedBoxedMemoryHolder, LockedBoxedTraceChunk,
+    SimulationRunner, Snapshot,
 };
 use crate::execution::tracing::{Tracer, TracingType};
 use crate::machine_type::MachineType;
@@ -51,7 +52,7 @@ pub(crate) fn run_simulator<
     trace!("BATCH[{batch_id}] SIMULATOR started");
     let mut non_determinism_guard = non_determinism.lock().unwrap();
     let non_determinism_source = non_determinism_guard.take().unwrap();
-    let runner = SimulationRunner::<_, T>::new(
+    let mut runner = SimulationRunner::<_, T>::new(
         batch_id,
         machine_type,
         non_determinism_source,
@@ -62,6 +63,15 @@ pub(crate) fn run_simulator<
         free_allocators.clone(),
         abort,
     );
+    // The pinned unified circuit has one I&T record per usable row. Collection
+    // emits at most one record per RAM word, so its trailing I&T occupancy is
+    // bounded even if a delegation touches many words in a single VM cycle.
+    runner.empty_it_streamer = (!T::IS_SPLIT).then(|| {
+        EmptyInitsAndTeardownsStreamer::new(
+            memory_holder.memory.len(),
+            setups::unified_reduced_machine::NUM_CYCLES,
+        )
+    });
     let runner = runner.run(
         binary_image,
         text_section,
@@ -76,6 +86,7 @@ pub(crate) fn run_simulator<
         abort,
         state,
         is_aborted,
+        empty_it_streamer,
         ..
     } = runner;
     *non_determinism_guard = Some(non_determinism_source);
@@ -101,7 +112,12 @@ pub(crate) fn run_simulator<
             let total_cycles = (timestamp_diff / TIMESTAMP_STEP) as usize;
             let empty_cycles = total_cycles - count;
             let empty_circuits = empty_cycles / per_circuit_count;
-            for sequence_id in 0..empty_circuits {
+            // Preserve this revision's exact final empty prefix, including a
+            // partial final circuit; emit only markers not already streamed.
+            let remaining_empty = empty_it_streamer
+                .expect("unified simulation requires an empty init/teardown streamer")
+                .finish(empty_circuits);
+            for sequence_id in remaining_empty {
                 let data = InitsAndTeardownsData {
                     circuit_type: CircuitType::Unrolled(UnrolledCircuitType::Unified),
                     sequence_id,

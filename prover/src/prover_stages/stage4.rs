@@ -7,9 +7,10 @@ pub struct FourthStageOutput<const N: usize, A: GoodAllocator, T: MerkleTreeCons
     pub values_at_z: Vec<Mersenne31Quartic>,
     pub ldes: Vec<CosetBoundColumnMajorTracePart<A>>,
     pub trees: Vec<T>,
-    // gpu comparison test needs z and alpha
+    // gpu comparison test needs the FRI opening challenges
     pub z: Mersenne31Quartic,
     pub alpha: Mersenne31Quartic,
+    pub lift_offset: Mersenne31Quartic,
     pub quotient_z_pow_challenge: u64,
     pub deep_poly_alpha_pow_challenge: u64,
 }
@@ -492,7 +493,7 @@ pub fn prover_stage_4<const N: usize, A: GoodAllocator, T: MerkleTreeConstructor
 
     // now we can compute \sum alpha^i f_i(z)
 
-    let num_transcript_challenges = 1usize * 4;
+    let num_transcript_challenges = 2usize * 4;
     let (deep_poly_alpha_pow_challenge, transcript_challenges) =
         get_pow_challenge_and_transcript_challenges(
             seed,
@@ -503,6 +504,11 @@ pub fn prover_stage_4<const N: usize, A: GoodAllocator, T: MerkleTreeConstructor
 
     let mut it = transcript_challenges.as_chunks::<4>().0.iter();
     let deep_poly_alpha = Mersenne31Quartic::from_coeffs_in_base(
+        &it.next()
+            .unwrap()
+            .map(|el| Mersenne31Field::from_nonreduced_u32(el)),
+    );
+    let lift_offset = Mersenne31Quartic::from_coeffs_in_base(
         &it.next()
             .unwrap()
             .map(|el| Mersenne31Field::from_nonreduced_u32(el)),
@@ -575,11 +581,13 @@ pub fn prover_stage_4<const N: usize, A: GoodAllocator, T: MerkleTreeConstructor
                 let mut deep_poly_trace_view = deep_poly_trace.row_view(range.clone());
                 let mut z_minus_omega_powers_view = z_minus_omega_powers_values.row_view(range);
                 let omega_inv = twiddles.omega_inv;
+                let omega = twiddles.omega;
 
                 Worker::smart_spawn(
                     scope,
                     thread_idx == geometry.len() - 1,
                     move |_| {
+                    let mut omega_power = omega.pow(chunk_start as u32);
                     for _i in 0..chunk_size {
                         let (exec_trace_view_row, exec_trace_view_next_row) =
                             exec_trace_view.current_and_next_row_ref();
@@ -791,6 +799,12 @@ pub fn prover_stage_4<const N: usize, A: GoodAllocator, T: MerkleTreeConstructor
 
                         let mut accumulated = contribution_at_z;
                         accumulated.add_assign(&contribution_at_z_omega);
+                        // The fresh affine factor restores the degree lost by opening
+                        // without cancelling a pole chosen in the committed source.
+                        let mut lift_factor = lift_offset;
+                        lift_factor.add_assign_base(&omega_power);
+                        accumulated.mul_assign(&lift_factor);
+                        omega_power.mul_assign(&omega);
 
                         // write back accumulated value
                         deep_poly_trace_view_row_ptr.write(accumulated);
@@ -809,27 +823,6 @@ pub fn prover_stage_4<const N: usize, A: GoodAllocator, T: MerkleTreeConstructor
     }
     #[cfg(feature = "timing_logs")]
     dbg!(now.elapsed());
-
-    if DEBUG_QUOTIENT == true {
-        // check that we have highest monomial coefficient 0
-        let mut tmp = deep_poly_trace.clone();
-        parallel_row_major_full_line_partial_ifft(&mut tmp, &twiddles.inverse_twiddles, worker);
-
-        // NOTE: output is bitreversed, but we are interested at the highest monomial coefficient,
-        // so it stays at the same place
-        let row_view = tmp.row_view((trace_len - 1)..trace_len);
-        let row = row_view.current_row_ref();
-        for el in row {
-            assert!(el.is_zero());
-        }
-
-        // let mut row_view = tmp.row_view((trace_len - 3)..trace_len);
-        // for _ in 0..3 {
-        //     let row = row_view.current_row_ref();
-        //     dbg!(row);
-        //     row_view.advance_row();
-        // }
-    }
 
     // now we can LDE and make oracles
     let ldes = compute_wide_ldes(
@@ -910,6 +903,7 @@ pub fn prover_stage_4<const N: usize, A: GoodAllocator, T: MerkleTreeConstructor
         trees,
         z,
         alpha: deep_poly_alpha,
+        lift_offset,
         quotient_z_pow_challenge,
         deep_poly_alpha_pow_challenge,
     };

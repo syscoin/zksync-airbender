@@ -125,7 +125,7 @@ pub unsafe fn verify_with_configuration<
     [(); Geometry::<S>::LOOKUP_TRANSCRIPT_CHALLENGE_ARRAY_SIZE]:,
     [(); Geometry::<S>::QUOTIENT_ALPHA_TRANSCRIPT_CHALLENGE_ARRAY_SIZE]:,
     [(); Geometry::<S>::QUOTIENT_Z_TRANSCRIPT_CHALLENGE_ARRAY_SIZE]:,
-    [(); Geometry::<S>::DEEP_POLY_ALPHA_TRANSCRIPT_CHALLENGE_ARRAY_SIZE]:,
+    [(); Geometry::<S>::DEEP_POLY_TRANSCRIPT_CHALLENGE_ARRAY_SIZE]:,
     [(); Geometry::<S>::LAST_FRI_FOLDING_TRANSCRIPT_CHALLENGE_ARRAY_SIZE]:,
 {
     Mersenne31Quartic::init_ext4_fma_ops();
@@ -328,10 +328,9 @@ pub unsafe fn verify_with_configuration<
     }
 
     // draw initial challenge for DEEP-poly
-    let mut transcript_challenges = MaybeUninit::<
-        [u32; Geometry::<S>::DEEP_POLY_ALPHA_TRANSCRIPT_CHALLENGE_ARRAY_SIZE],
-    >::uninit()
-    .assume_init();
+    let mut transcript_challenges =
+        MaybeUninit::<[u32; Geometry::<S>::DEEP_POLY_TRANSCRIPT_CHALLENGE_ARRAY_SIZE]>::uninit()
+            .assume_init();
     Transcript::draw_randomness_using_hasher(
         &mut transcript_hasher,
         &mut seed,
@@ -346,6 +345,11 @@ pub unsafe fn verify_with_configuration<
     };
 
     let deep_poly_alpha = Mersenne31Quartic::from_array_of_base(
+        it.next()
+            .unwrap_unchecked()
+            .map(|el| Mersenne31Field::from_nonreduced_u32(el)),
+    );
+    let lift_offset = Mersenne31Quartic::from_array_of_base(
         it.next()
             .unwrap_unchecked()
             .map(|el| Mersenne31Field::from_nonreduced_u32(el)),
@@ -852,6 +856,11 @@ pub unsafe fn verify_with_configuration<
             };
 
             let mut expected_value = expected_value;
+            // Bind the source degree with the fresh affine factor before folding.
+            // Use the full coset point, before folding mutates it.
+            let mut lift_factor = lift_offset;
+            lift_factor.add_assign_base(&evaluation_point);
+            expected_value.mul_assign(&lift_factor);
             let mut evaluation_point = evaluation_point;
 
             let mut domain_size_log_2 = TRACE_LEN_LOG2;

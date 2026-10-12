@@ -104,9 +104,9 @@ where
         verifier_common::transcript_challenge_array_size(2usize * 4, Self::QUOTIENT_ALPHA_POW_BITS);
     pub const QUOTIENT_Z_TRANSCRIPT_CHALLENGE_ARRAY_SIZE: usize =
         verifier_common::transcript_challenge_array_size(1usize * 4, Self::QUOTIENT_Z_POW_BITS);
-    pub const DEEP_POLY_ALPHA_TRANSCRIPT_CHALLENGE_ARRAY_SIZE: usize =
+    pub const DEEP_POLY_TRANSCRIPT_CHALLENGE_ARRAY_SIZE: usize =
         verifier_common::transcript_challenge_array_size(
-            1usize * 4,
+            2usize * 4,
             Self::DEEP_POLY_ALPHA_POW_BITS,
         );
     pub const LAST_FRI_FOLDING_POW_BITS: usize =

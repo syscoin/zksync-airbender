@@ -18,6 +18,8 @@ pub fn apply_csr_with_delegation<
     inputs: &DE,
     boolean_set: &BS,
     opt_ctx: &mut OptimizationContext<F, CS>,
+    // Ordinary machine circuits execute every row; opcode-family circuits may pad.
+    outer_row_execute: Option<Variable>,
 ) -> CommonDiffs<F> {
     if SUPPORT_CSR_IMMEDIATES {
         todo!()
@@ -54,6 +56,14 @@ pub fn apply_csr_with_delegation<
             let should_delegate = cs.add_variable_from_constraint(
                 Term::from(is_for_delegation) * Term::from(exec_flag),
             );
+
+            // A CSR selector alone does not authorize a request on an inactive row.
+            // Keep this implication quadratic instead of extending the selector product.
+            if let Some(execute) = outer_row_execute {
+                cs.add_constraint(
+                    Term::from(should_delegate) * (Term::from(1u64) - Term::from(execute)),
+                );
+            }
 
             // in our ABI we use highest 16 bits of src1 as the offset
             let offset = src1.0[1];

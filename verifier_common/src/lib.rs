@@ -28,6 +28,17 @@ impl SecurityModel {
     }
 }
 
+#[cfg(all(test, not(feature = "worst_case_config_generation")))]
+mod shared_pow_tests {
+    use super::*;
+
+    #[test]
+    fn generated_shared_pow_reaches_the_selected_security_models() {
+        assert_eq!(SecurityModel::Security80.memory_delegation_pow_bits(), 0);
+        assert_eq!(SecurityModel::Security100.memory_delegation_pow_bits(), 17);
+    }
+}
+
 // The file should be generated with tools/pow_config_generator
 #[cfg(not(feature = "worst_case_config_generation"))]
 #[allow(dead_code)]

@@ -282,3 +282,260 @@ pub unsafe fn fri_fold_by_log_n_with_fma<const FOLDING_DEGREE_LOG2: usize>(
     *tree_index >>= FOLDING_DEGREE_LOG2;
     *domain_index = shared_bits_in_folding;
 }
+
+#[cfg(test)]
+mod degree_lift_tests {
+    use super::*;
+
+    const SOURCE_DEGREE_BOUND: u32 = 8;
+
+    fn honest_source(x: Mersenne31Complex) -> Mersenne31Complex {
+        x + x.pow(SOURCE_DEGREE_BOUND - 1)
+    }
+
+    fn boundary_source(x: Mersenne31Complex) -> Mersenne31Complex {
+        Mersenne31Complex::ONE + x.pow(SOURCE_DEGREE_BOUND)
+    }
+
+    fn opened_value<F>(
+        source: F,
+        x: Mersenne31Complex,
+        lift_offset: Option<Mersenne31Quartic>,
+    ) -> Mersenne31Quartic
+    where
+        F: Fn(Mersenne31Complex) -> Mersenne31Quartic,
+    {
+        let z = Mersenne31Complex::TWO_ADICITY_GENERATORS[5];
+        let mut quotient = source(z);
+        quotient.sub_assign(&source(x));
+        quotient.mul_assign_by_base(&(z - x).inverse().unwrap());
+        if let Some(offset) = lift_offset {
+            let mut factor = offset;
+            factor.add_assign_base(&x);
+            quotient.mul_assign(&factor);
+        }
+        quotient
+    }
+
+    fn base_words(value: Mersenne31Quartic) -> [Mersenne31Field; 4] {
+        [value.c0.c0, value.c0.c1, value.c1.c0, value.c1.c1]
+    }
+
+    fn fold_query<F>(
+        source: F,
+        lift_offset: Option<Mersenne31Quartic>,
+        coset: usize,
+        index: usize,
+        challenge: Mersenne31Quartic,
+    ) -> (Mersenne31Complex, Mersenne31Quartic)
+    where
+        F: Fn(Mersenne31Complex) -> Mersenne31Quartic + Copy,
+    {
+        let omega = Mersenne31Complex::TWO_ADICITY_GENERATORS[3];
+        let tau = Mersenne31Complex::TWO_ADICITY_GENERATORS[4];
+        let offset = if coset == 0 {
+            Mersenne31Complex::ONE
+        } else {
+            tau
+        };
+        let x = offset * omega.pow(index as u32);
+        let pair_x = offset * omega.pow((index % 4) as u32);
+        let first = opened_value(source, pair_x, lift_offset);
+        let second = opened_value(source, pair_x * omega.pow(4), lift_offset);
+        let leaf = [base_words(first), base_words(second)].concat();
+        let mut expected_value = opened_value(source, x, lift_offset);
+        let mut evaluation_point = x;
+        let mut domain_size_log_2 = 3;
+        let mut domain_index = index;
+        let mut tree_index = index.reverse_bits() >> (usize::BITS - 3);
+        let mut offset_inv = offset.inverse().unwrap();
+        unsafe {
+            fri_fold_by_log_n::<1>(
+                &mut expected_value,
+                &mut evaluation_point,
+                &mut domain_size_log_2,
+                &mut domain_index,
+                &mut tree_index,
+                &mut offset_inv,
+                &leaf,
+                &[challenge],
+                &[Mersenne31Complex::ONE],
+            );
+        }
+        assert_eq!(domain_size_log_2, 2);
+        assert_eq!(domain_index, index % 4);
+        assert_eq!(evaluation_point, x.pow(2));
+        (evaluation_point, expected_value)
+    }
+
+    fn folded_cosets<F>(
+        source: F,
+        lift_offset: Option<Mersenne31Quartic>,
+    ) -> [[(Mersenne31Complex, Mersenne31Quartic); 4]; 2]
+    where
+        F: Fn(Mersenne31Complex) -> Mersenne31Quartic + Copy,
+    {
+        let challenge = Mersenne31Quartic::from_array_of_base([
+            Mersenne31Field::new(2),
+            Mersenne31Field::new(3),
+            Mersenne31Field::new(5),
+            Mersenne31Field::new(7),
+        ]);
+        let mut samples = [[(Mersenne31Complex::ZERO, Mersenne31Quartic::ZERO); 4]; 2];
+        for coset in 0..2 {
+            for index in 0..4 {
+                samples[coset][index] = fold_query(source, lift_offset, coset, index, challenge);
+                // The opposite member of each FRI leaf must produce the same folded value.
+                assert_eq!(
+                    samples[coset][index],
+                    fold_query(source, lift_offset, coset, index + 4, challenge)
+                );
+            }
+        }
+        samples
+    }
+
+    fn terminal_coefficients(
+        main_coset: &[(Mersenne31Complex, Mersenne31Quartic); 4],
+    ) -> [Mersenne31Quartic; 4] {
+        let inverse_four = Mersenne31Field::new(4).inverse().unwrap();
+        let inverse_four = Mersenne31Complex::from_base(inverse_four);
+        let mut coefficients = [Mersenne31Quartic::ZERO; 4];
+        for (degree, coefficient) in coefficients.iter_mut().enumerate() {
+            for &(point, value) in main_coset {
+                let weight = point.inverse().unwrap().pow(degree as u32);
+                let mut term = value;
+                term.mul_assign_by_base(&weight);
+                coefficient.add_assign(&term);
+            }
+            coefficient.mul_assign_by_base(&inverse_four);
+        }
+        coefficients
+    }
+
+    fn evaluate_terminal(
+        coefficients: &[Mersenne31Quartic; 4],
+        point: Mersenne31Complex,
+    ) -> Mersenne31Quartic {
+        let mut result = Mersenne31Quartic::ZERO;
+        for coefficient in coefficients.iter().rev() {
+            result.mul_assign_by_base(&point);
+            result.add_assign(coefficient);
+        }
+        result
+    }
+
+    fn terminal_matches_both_cosets(
+        samples: &[[(Mersenne31Complex, Mersenne31Quartic); 4]; 2],
+    ) -> bool {
+        let coefficients = terminal_coefficients(&samples[0]);
+        samples
+            .iter()
+            .flat_map(|coset| coset.iter())
+            .all(|&(point, value)| evaluate_terminal(&coefficients, point) == value)
+    }
+
+    fn degree_fifteen_coefficient<F>(source: F) -> Mersenne31Quartic
+    where
+        F: Fn(Mersenne31Complex) -> Mersenne31Quartic,
+    {
+        let tau = Mersenne31Complex::TWO_ADICITY_GENERATORS[4];
+        let mut x = Mersenne31Complex::ONE;
+        let mut coefficient = Mersenne31Quartic::ZERO;
+        for _ in 0..16 {
+            // On this 16-point subgroup, X^-15 = X.
+            let mut term = source(x);
+            term.mul_assign_by_base(&x);
+            coefficient.add_assign(&term);
+            x.mul_assign(&tau);
+        }
+        coefficient.mul_assign_by_base(&Mersenne31Complex::from_base(
+            Mersenne31Field::new(16).inverse().unwrap(),
+        ));
+        coefficient
+    }
+
+    #[test]
+    fn degree_lift_excludes_opening_quotient_at_source_degree_boundary() {
+        let offset = Mersenne31Quartic::from_array_of_base([
+            Mersenne31Field::new(11),
+            Mersenne31Field::new(13),
+            Mersenne31Field::new(17),
+            Mersenne31Field::new(19),
+        ]);
+        let honest = |x| Mersenne31Quartic::from_base(honest_source(x));
+        let boundary = |x| Mersenne31Quartic::from_base(boundary_source(x));
+        let honest_lifted = folded_cosets(honest, Some(offset));
+        let boundary_unlifted = folded_cosets(boundary, None);
+        let boundary_lifted = folded_cosets(boundary, Some(offset));
+
+        for samples in [&honest_lifted, &boundary_unlifted] {
+            let coefficients = terminal_coefficients(&samples[0]);
+            for coset in samples {
+                for &(point, value) in coset {
+                    assert_eq!(evaluate_terminal(&coefficients, point), value);
+                }
+            }
+        }
+
+        let boundary_coefficients = terminal_coefficients(&boundary_lifted[0]);
+        for &(point, value) in &boundary_lifted[0] {
+            assert_eq!(evaluate_terminal(&boundary_coefficients, point), value);
+        }
+        for &(point, value) in &boundary_lifted[1] {
+            assert_ne!(evaluate_terminal(&boundary_coefficients, point), value);
+        }
+    }
+
+    #[test]
+    fn random_affine_lift_rejects_quartic_inverse_source() {
+        let coefficient = Mersenne31Quartic::from_array_of_base([
+            Mersenne31Field::new(11),
+            Mersenne31Field::new(13),
+            Mersenne31Field::new(17),
+            Mersenne31Field::new(19),
+        ]);
+        let source = |x: Mersenne31Complex| {
+            let mut value = coefficient;
+            value.mul_assign_by_base(&x.inverse().unwrap());
+            value
+        };
+        assert_eq!(degree_fifteen_coefficient(source), coefficient);
+
+        let zero = Mersenne31Quartic::ZERO;
+        assert!(terminal_matches_both_cosets(&folded_cosets(
+            source,
+            Some(zero)
+        )));
+        assert!(!terminal_matches_both_cosets(&folded_cosets(
+            source,
+            Some(coefficient)
+        )));
+    }
+
+    #[test]
+    fn random_affine_lift_rejects_base_valued_inverse_source() {
+        let source = |x: Mersenne31Complex| {
+            let value = x + x.inverse().unwrap();
+            assert_eq!(value.c1, Mersenne31Field::ZERO);
+            Mersenne31Quartic::from_base(value)
+        };
+        assert_eq!(degree_fifteen_coefficient(source), Mersenne31Quartic::ONE);
+
+        let zero = Mersenne31Quartic::ZERO;
+        let offset = Mersenne31Quartic::from_array_of_base([
+            Mersenne31Field::new(11),
+            Mersenne31Field::new(13),
+            Mersenne31Field::new(17),
+            Mersenne31Field::new(19),
+        ]);
+        assert!(terminal_matches_both_cosets(&folded_cosets(
+            source,
+            Some(zero)
+        )));
+        assert!(!terminal_matches_both_cosets(&folded_cosets(
+            source,
+            Some(offset)
+        )));
+    }
+}

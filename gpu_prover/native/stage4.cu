@@ -80,7 +80,7 @@ EXTERN __launch_bounds__(512, 2) __global__ void ab_deep_quotient_kernel(
     vector_getter<e4, ld_modifier::ca> grand_product_challenge_at_z_omega, const ChallengesTimesEvalsSums *challenges_times_evals_sums_ref,
     vectorized_e4_matrix_setter<st_modifier::cs> quotient, const unsigned num_setup_cols, const unsigned num_witness_cols, const unsigned num_memory_cols,
     const unsigned num_stage_2_bf_cols, const unsigned num_stage_2_e4_cols, const unsigned stage_2_memory_grand_product_offset, const unsigned log_n,
-    const bool bit_reversed) {
+    const bool bit_reversed, const e4 *lift_offset_ref) {
   const unsigned n = 1u << log_n;
   const unsigned gid = blockIdx.x * blockDim.x + threadIdx.x;
   if (gid >= n)
@@ -168,7 +168,9 @@ EXTERN __launch_bounds__(512, 2) __global__ void ab_deep_quotient_kernel(
   acc_z = e4::mul(acc_z, denom_z);
   acc_z_omega = e4::mul(acc_z_omega, denom_z_omega);
 
-  quotient.set(e4::add(acc_z, acc_z_omega));
+  // A post-commitment extension-field offset prevents a fixed lift factor from hiding a pole in committed source evaluations.
+  const e2 x = get_power_of_w(raw_row << (CIRCLE_GROUP_LOG_ORDER - log_n), false);
+  quotient.set(e4::mul(e4::add(acc_z, acc_z_omega), e4::add(x, *lift_offset_ref)));
 }
 
 } // namespace airbender::stage4
