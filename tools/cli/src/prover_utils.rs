@@ -480,14 +480,19 @@ impl ProgramProver {
             unified_recursion_ms: Vec::new(),
         };
 
-        let loaded = load_program(&self.source)?;
+        // The GPU registered these bytes at construction; the source files may have
+        // changed or disappeared while proving.
+        let base_program = &prover.level_data[&UnrolledProverLevel::Base];
         Ok(make_artifact(
             self.config.security_level,
             self.config.target,
             self.config.backend,
             batch_id,
             cycles,
-            program_keccaks(&loaded),
+            (
+                keccak256(&base_program.binary),
+                keccak256(&base_program.text),
+            ),
             timings,
             proof,
         ))
