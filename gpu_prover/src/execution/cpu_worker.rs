@@ -16,7 +16,7 @@ use log::{debug, trace};
 use prover::common_constants;
 use prover::definitions::LazyInitAndTeardown;
 use riscv_transpiler::abstractions::non_determinism::QuasiUARTSource;
-use riscv_transpiler::common_constants::{TimestampScalar, INITIAL_TIMESTAMP, TIMESTAMP_STEP};
+use riscv_transpiler::common_constants::{INITIAL_TIMESTAMP, TIMESTAMP_STEP};
 use riscv_transpiler::jit::{MemoryHolder, ReplayerMemChunks};
 use riscv_transpiler::replayer::ReplayerVM;
 use riscv_transpiler::vm::{InstructionTape, NonDeterminismCSRSource, State};
