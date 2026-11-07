@@ -13,14 +13,15 @@ use era_cudart::memory::memory_copy_async;
 use era_cudart::result::CudaResult;
 use era_cudart::slice::{CudaSlice, DeviceSlice};
 use fft::{
-    bitreverse_enumeration_inplace, partial_ifft_natural_to_natural, GoodAllocator,
-    LdePrecomputations,
+    bitreverse_enumeration_inplace, domain_generator_for_size,
+    materialize_powers_serial_starting_with_one, partial_ifft_natural_to_natural,
 };
 use field::{Field, FieldExtension, Mersenne31Field};
 use itertools::Itertools;
 use prover::definitions::{FoldingDescription, Transcript};
 use prover::prover_stages::{ProofPowChallenges, ProofSecurityConfig};
 use prover::transcript::Seed;
+use std::alloc::Global;
 use std::iter;
 
 pub(crate) struct FRIStep {
@@ -54,7 +55,6 @@ impl StageFiveOutput {
         log_domain_size: u32,
         log_lde_factor: u32,
         folding_description: &FoldingDescription,
-        lde_precomputations: &LdePrecomputations<impl GoodAllocator>,
         callbacks: &mut Callbacks<'a>,
         context: &ProverContext,
     ) -> CudaResult<Self> {
@@ -71,11 +71,10 @@ impl StageFiveOutput {
         let mut last_fri_step_plain_leaf_values = Default::default();
         let stream = context.get_exec_stream();
         let seed_accessor = seed.get_mut_accessor();
-        let taus_clone = lde_precomputations.domain_bound_precomputations[0]
-            .as_ref()
-            .unwrap()
-            .taus
-            .clone();
+        let coset_generator =
+            domain_generator_for_size::<E2>(1u64 << (log_domain_size + log_lde_factor));
+        let taus_clone =
+            materialize_powers_serial_starting_with_one::<E2, Global>(coset_generator, lde_factor);
         let mut taus = unsafe { context.alloc_host_uninit_slice(taus_clone.len()) };
         let taus_accessor = taus.get_mut_accessor();
         let set_taus_fn = move || unsafe {

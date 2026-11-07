@@ -3174,7 +3174,6 @@ fn run_unrolled_reduced_test() -> CudaResult<()> {
             Some(&d_decoder_table),
             Some(inits_and_teardowns_transfer),
             Some(transfer),
-            &lde_precomputations,
             None,
             lde_factor,
             &security_config,

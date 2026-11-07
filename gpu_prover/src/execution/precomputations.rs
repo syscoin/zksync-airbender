@@ -9,7 +9,6 @@ use crate::witness::trace_unrolled::ExecutorFamilyDecoderData;
 use cs::machine::ops::unrolled::materialize_flattened_decoder_table;
 use cs::one_row_compiler::CompiledCircuitArtifact;
 use era_cudart::memory::{CudaHostAllocFlags, HostAllocation};
-use fft::LdePrecomputations;
 use field::Mersenne31Field;
 use prover::merkle_trees::DefaultTreeConstructor;
 use prover::prover_stages::SetupPrecomputations;
@@ -31,7 +30,6 @@ type BF = Mersenne31Field;
 #[derive(Clone)]
 pub struct CircuitPrecomputations {
     pub compiled_circuit: Arc<CompiledCircuitArtifact<BF>>,
-    pub lde_precomputations: Arc<LdePrecomputations<Global>>,
     pub setup_trace: Arc<Vec<BF, ConcurrentStaticHostAllocator>>,
     pub setup_trees_and_caps: Arc<OnceLock<SetupTreesAndCaps>>,
     pub decoder_data: Option<Arc<Vec<ExecutorFamilyDecoderData, ConcurrentStaticHostAllocator>>>,
@@ -161,12 +159,6 @@ impl CircuitPrecomputations {
             (vec![], None)
         };
         let domain_size = circuit_type.get_domain_size();
-        let lde_precomputations = LdePrecomputations::new(
-            domain_size,
-            circuit_type.get_lde_factor(),
-            circuit_type.get_lde_source_cosets(),
-            &worker,
-        );
         let setup = SetupPrecomputations::<
             DEFAULT_TRACE_PADDING_MULTIPLE,
             Global,
@@ -180,7 +172,6 @@ impl CircuitPrecomputations {
         );
         Self {
             compiled_circuit: Arc::new(compiled_circuit),
-            lde_precomputations: Arc::new(lde_precomputations),
             setup_trace: get_setup_trace_from_row_major_trace(&setup),
             setup_trees_and_caps: Arc::new(OnceLock::new()),
             decoder_data,
@@ -191,25 +182,40 @@ impl CircuitPrecomputations {
 fn get_setup_trace_from_row_major_trace<const N: usize>(
     trace: &RowMajorTrace<BF, N, Global>,
 ) -> Arc<Vec<BF, ConcurrentStaticHostAllocator>> {
-    let trace_total_size = trace.as_slice().len();
-    let trace_total_size_bytes = trace_total_size * size_of::<BF>();
     let trace_len = trace.len();
     assert!(trace_len.is_power_of_two());
+    let trace_total_size = trace_len * trace.width();
+    let trace_total_size_bytes = trace_total_size * size_of::<BF>();
     let trace_len_bytes = trace_len * size_of::<BF>();
     let log_trace_len_bytes = trace_len_bytes.trailing_zeros();
     let allocation =
         HostAllocation::alloc(trace_total_size_bytes, CudaHostAllocFlags::DEFAULT).unwrap();
     let allocator = ConcurrentStaticHostAllocator::new([allocation], log_trace_len_bytes);
-    let mut setup_evaluations = Vec::with_capacity_in(trace.as_slice().len(), allocator);
-    unsafe { setup_evaluations.set_len(trace.as_slice().len()) };
-    transpose::transpose(
-        trace.as_slice(),
-        &mut setup_evaluations,
-        trace.padded_width,
-        trace_len,
-    );
-    setup_evaluations.truncate(trace_len * trace.width());
+    let mut setup_evaluations = Vec::with_capacity_in(trace_total_size, allocator);
+    // Every element is initialized by the transpose before the vector is read.
+    unsafe { setup_evaluations.set_len(trace_total_size) };
+    transpose_setup_trace(trace, &mut setup_evaluations);
     Arc::new(setup_evaluations)
+}
+
+fn transpose_setup_trace<const N: usize>(trace: &RowMajorTrace<BF, N, Global>, dst: &mut [BF]) {
+    let rows = trace.len();
+    assert_eq!(dst.len(), rows * trace.width());
+    // Keep source rows hot while omitting padding from the retained columns.
+    const TILE_ROWS: usize = 32;
+    for (tile_index, tile) in trace
+        .as_slice()
+        .chunks(TILE_ROWS * trace.padded_width)
+        .enumerate()
+    {
+        let start = tile_index * TILE_ROWS;
+        let tile_rows = tile.len() / trace.padded_width;
+        for (column, dst_column) in dst.chunks_exact_mut(rows).enumerate() {
+            for (row, value) in dst_column[start..start + tile_rows].iter_mut().enumerate() {
+                *value = tile[row * trace.padded_width + column];
+            }
+        }
+    }
 }
 
 pub fn get_common_precomputations(
@@ -228,4 +234,68 @@ pub fn get_common_precomputations(
             )
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fft::{
+        domain_generator_for_size, materialize_powers_serial_starting_with_one, LdePrecomputations,
+    };
+    use field::Mersenne31Complex;
+
+    #[test]
+    fn setup_trace_storage_omits_row_padding() {
+        const ROWS: usize = 64;
+        for width in [1, 6, 12, 16, 32] {
+            let mut source =
+                RowMajorTrace::<BF, 32, Global>::new_zeroed_for_size(ROWS, width, Global);
+            for (index, value) in source.as_slice_mut().iter_mut().enumerate() {
+                *value = Mersenne31Field((index + 1) as u32);
+            }
+            let trace = get_setup_trace_from_row_major_trace(&source);
+            let expected = (0..width)
+                .flat_map(|column| {
+                    (0..ROWS).map(move |row| Mersenne31Field((row * 32 + column + 1) as u32))
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(trace.as_slice(), expected);
+            assert_eq!(trace.capacity(), ROWS * width, "width {width}");
+        }
+    }
+
+    #[test]
+    fn direct_coset_constants_match_lde_precomputations() {
+        let worker = Worker::new_with_num_threads(1);
+        for trace_len in [64, 128, 256] {
+            for lde_factor in [2, 4] {
+                let source_cosets = (0..lde_factor).collect::<Vec<_>>();
+                let tables = LdePrecomputations::<Global>::new(
+                    trace_len,
+                    lde_factor,
+                    &source_cosets,
+                    &worker,
+                );
+                let generator =
+                    domain_generator_for_size::<Mersenne31Complex>((trace_len * lde_factor) as u64);
+                assert_eq!(
+                    generator,
+                    tables.domain_bound_precomputations[1]
+                        .as_ref()
+                        .unwrap()
+                        .coset_offset,
+                );
+                let taus = materialize_powers_serial_starting_with_one::<Mersenne31Complex, Global>(
+                    generator, lde_factor,
+                );
+                assert_eq!(
+                    taus,
+                    tables.domain_bound_precomputations[0]
+                        .as_ref()
+                        .unwrap()
+                        .taus,
+                );
+            }
+        }
+    }
 }
