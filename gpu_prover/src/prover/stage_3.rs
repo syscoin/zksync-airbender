@@ -6,7 +6,7 @@ use super::stage_2::StageTwoOutput;
 use super::stage_3_kernels::*;
 use super::stage_3_utils::*;
 use super::trace_holder::{CosetsCacheMode, TraceHolder, TreesCacheMode};
-use super::{BF, E4};
+use super::{BF, E2, E4};
 use crate::allocator::tracker::AllocationPlacement;
 use crate::device_structures::{DeviceMatrix, DeviceMatrixMut};
 use crate::prover::pow::search_pow_challenge;
@@ -15,7 +15,7 @@ use blake2s_u32::BLAKE2S_DIGEST_SIZE_U32_WORDS;
 use cs::one_row_compiler::CompiledCircuitArtifact;
 use era_cudart::memory::memory_copy_async;
 use era_cudart::result::CudaResult;
-use fft::{materialize_powers_serial_starting_with_one, GoodAllocator, LdePrecomputations};
+use fft::{domain_generator_for_size, materialize_powers_serial_starting_with_one};
 use field::FieldExtension;
 use prover::definitions::AuxArgumentsBoundaryValues;
 use prover::prover_stages::cached_data::ProverCachedData;
@@ -39,7 +39,6 @@ impl StageThreeOutput {
         circuit: &Arc<CompiledCircuitArtifact<BF>>,
         is_unrolled: bool,
         cached_data: &ProverCachedData,
-        lde_precomputations: &LdePrecomputations<impl GoodAllocator>,
         aux_boundary_values: Vec<AuxArgumentsBoundaryValues>,
         setup: &mut SetupPrecomputations,
         stage_1_output: &mut StageOneOutput,
@@ -83,10 +82,7 @@ impl StageThreeOutput {
         let alpha_powers_layout =
             AlphaPowersLayout::new(&circuit, cached_data.num_stage_3_quotient_terms);
         let alpha_powers_count = alpha_powers_layout.precomputation_size;
-        let tau = lde_precomputations.domain_bound_precomputations[COSET_INDEX]
-            .as_ref()
-            .unwrap()
-            .coset_offset;
+        let tau = domain_generator_for_size::<E2>((trace_len as u64) << log_lde_factor);
         let mut h_alpha_powers = unsafe { context.alloc_host_uninit_slice(alpha_powers_count) };
         let h_alpha_powers_accessor = h_alpha_powers.get_mut_accessor();
         let mut h_beta_powers = unsafe { context.alloc_host_uninit_slice(BETA_POWERS_COUNT) };

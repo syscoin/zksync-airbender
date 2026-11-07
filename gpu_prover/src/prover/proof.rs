@@ -19,7 +19,7 @@ use era_cudart::event::{CudaEvent, CudaEventCreateFlags};
 use era_cudart::result::CudaResult;
 use era_cudart::slice::DeviceSlice;
 use era_cudart::stream::CudaStreamWaitEventFlags;
-use fft::{GoodAllocator, LdePrecomputations};
+use fft::GoodAllocator;
 use field::Mersenne31Field;
 use itertools::Itertools;
 use prover::definitions::{
@@ -79,7 +79,6 @@ pub(crate) fn prove<'a, A: GoodAllocator>(
     decoder_table: Option<&DeviceSlice<ExecutorFamilyDecoderData>>,
     inits_and_teardowns_transfer: Option<InitsAndTeardownsTransfer<'a, A>>,
     tracing_data_transfer: Option<TracingDataTransfer<'a, A>>,
-    lde_precomputations: &LdePrecomputations<impl GoodAllocator>,
     delegation_processing_type: Option<u16>,
     lde_factor: usize,
     security_config: &ProofSecurityConfig,
@@ -214,7 +213,6 @@ pub(crate) fn prove<'a, A: GoodAllocator>(
         &circuit,
         is_unrolled,
         &cached_data_values,
-        &lde_precomputations,
         aux_boundary_values.clone(),
         setup,
         &mut stage_1_output,
@@ -264,7 +262,6 @@ pub(crate) fn prove<'a, A: GoodAllocator>(
         log_domain_size,
         log_lde_factor,
         &optimal_folding,
-        &lde_precomputations,
         &mut callbacks,
         context,
     )?;

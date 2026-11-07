@@ -1972,7 +1972,9 @@ impl<I: ContextImpl> Context<I> {
         self.implementation.read_nondeterminism()
     }
 
-    extern "sysv64" fn write_nondeterminism(&mut self, value: u32, memory: &RamImage) {
+    extern "sysv64" fn write_nondeterminism(&mut self, value: u32, memory: *const u32) {
+        // Generated code passes the start of a live MemoryHolder's guest-memory array.
+        let memory = unsafe { core::slice::from_raw_parts(memory, NUM_RAM_WORDS) };
         self.implementation.write_nondeterminism(value, memory)
     }
 
@@ -2166,5 +2168,89 @@ fn view_rv32_assembly(assembly: &[u32], start: usize) {
         for op in ops {
             println!("{:8}{:?}", "", op);
         }
+    }
+}
+
+#[cfg(test)]
+mod ram_view_tests {
+    use super::*;
+
+    #[derive(Default)]
+    struct RecordingContext {
+        write: Option<(u32, usize, u32, u32)>,
+        final_state: Option<MachineState>,
+    }
+
+    impl ContextImpl for RecordingContext {
+        fn read_nondeterminism(&mut self) -> u32 {
+            0
+        }
+
+        fn write_nondeterminism(&mut self, value: u32, memory: &[u32]) {
+            self.write = Some((value, memory.len(), memory[0], memory[memory.len() - 1]));
+        }
+
+        fn receive_trace(
+            &mut self,
+            trace_piece: NonNull<TraceChunk>,
+            _machine_state: &MachineState,
+        ) -> NonNull<TraceChunk> {
+            trace_piece
+        }
+
+        fn receive_final_trace_piece(
+            &mut self,
+            _trace_piece: NonNull<TraceChunk>,
+            machine_state: &MachineState,
+        ) {
+            self.final_state = Some(*machine_state);
+        }
+
+        fn take_final_state(&mut self) -> Option<MachineState> {
+            self.final_state.take()
+        }
+
+        fn final_state_ref(&self) -> Option<&MachineState> {
+            self.final_state.as_ref()
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn nondeterminism_callback_uses_exact_ram_slice() {
+        // Both backing arrays contain integers, so zeroed heap storage is fully initialized.
+        let mut memory = unsafe { Box::<MemoryHolder>::new_zeroed().assume_init() };
+        memory.memory[0] = 0x11223344;
+        memory.memory[NUM_RAM_WORDS - 1] = 0x55667788;
+        let mut context = Context {
+            implementation: RecordingContext::default(),
+        };
+        Context::write_nondeterminism(&mut context, 41, memory.memory.as_ptr());
+        assert_eq!(
+            context.implementation.write,
+            Some((41, NUM_RAM_WORDS, 0x11223344, 0x55667788)),
+        );
+        context.implementation.write = None;
+
+        let addi_x1_123 = (123 << 20) | (1 << 7) | 0x13;
+        let write_nondeterminism_x1 = (NON_DETERMINISM_CSR << 20) | (1 << 15) | (1 << 12) | 0x73;
+        let program = [addi_x1_123, write_nondeterminism_x1, 0x0000006f];
+        let runner = JittedCode::preprocess_bytecode(&program, None);
+        // A zeroed trace has valid integer elements and starts with no recorded accesses.
+        let mut trace = unsafe { Box::<TraceChunk>::new_zeroed().assume_init() };
+        runner.run(
+            &mut context,
+            &mut memory,
+            NonNull::from(trace.as_mut()),
+            &[],
+        );
+        assert_eq!(
+            context.implementation.write,
+            Some((123, NUM_RAM_WORDS, 0x11223344, 0x55667788)),
+        );
+        assert_eq!(
+            context.implementation.final_state.unwrap().registers[1],
+            123
+        );
     }
 }

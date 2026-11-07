@@ -122,8 +122,7 @@ impl<const N: usize> RamPeek for [u32; N] {
     fn peek_word(&self, address: u32) -> u32 {
         debug_assert_eq!(address % 4, 0);
         let word_idx = (address / 4) as usize;
-        debug_assert!(word_idx < N);
-        unsafe { *self.get_unchecked(word_idx) }
+        self[word_idx]
     }
 }
 
@@ -132,8 +131,15 @@ impl RamPeek for [u32] {
     fn peek_word(&self, address: u32) -> u32 {
         debug_assert_eq!(address % 4, 0);
         let word_idx = (address / 4) as usize;
-        debug_assert!(word_idx < self.len());
-        unsafe { *self.get_unchecked(word_idx) }
+        self[word_idx]
+    }
+}
+
+// A slice reference gives sized generic and trait-object callers the same checked view.
+impl RamPeek for &[u32] {
+    #[inline(always)]
+    fn peek_word(&self, address: u32) -> u32 {
+        (**self).peek_word(address)
     }
 }
 
@@ -496,6 +502,31 @@ pub(crate) mod test {
 
     use super::*;
     use std::path::Path;
+
+    #[test]
+    fn ram_peek_reads_array_and_slice_boundaries() {
+        let words = [7u32, 11];
+        assert_eq!(words.peek_word(0), 7);
+        assert_eq!(words.peek_word(4), 11);
+        assert_eq!(words.as_slice().peek_word(0), 7);
+        assert_eq!(words.as_slice().peek_word(4), 11);
+        let slice = words.as_slice();
+        let dynamic_view: &dyn RamPeek = &slice;
+        assert_eq!(dynamic_view.peek_word(0), 7);
+        assert_eq!(dynamic_view.peek_word(4), 11);
+    }
+
+    #[test]
+    #[should_panic]
+    fn ram_peek_rejects_out_of_bounds_array() {
+        [7u32, 11].peek_word(8);
+    }
+
+    #[test]
+    #[should_panic]
+    fn ram_peek_rejects_out_of_bounds_slice() {
+        [7u32, 11].as_slice().peek_word(8);
+    }
 
     pub(crate) fn read_binary(path: &Path) -> (Vec<u8>, Vec<u32>) {
         use std::io::Read;
