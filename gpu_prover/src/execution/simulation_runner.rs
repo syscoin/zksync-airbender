@@ -12,7 +12,7 @@ use itertools::Itertools;
 use log::{debug, trace};
 use riscv_transpiler::common_constants::ROM_WORD_SIZE;
 use riscv_transpiler::jit::{
-    ContextImpl, MachineState, MemoryHolder, RamImage, TraceChunk, MAX_NUM_COUNTERS, RAM_SIZE,
+    ContextImpl, MachineState, MemoryHolder, RamImage, TraceChunk, MAX_NUM_COUNTERS,
 };
 use riscv_transpiler::vm::NonDeterminismCSRSource;
 use std::mem::replace;
