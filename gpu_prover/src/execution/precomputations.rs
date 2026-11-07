@@ -22,6 +22,7 @@ use setups::{
 use std::alloc::Global;
 use std::collections::BTreeMap;
 use std::iter::once;
+use std::mem::MaybeUninit;
 use std::sync::{Arc, OnceLock};
 use worker::Worker;
 
@@ -192,13 +193,19 @@ fn get_setup_trace_from_row_major_trace<const N: usize>(
         HostAllocation::alloc(trace_total_size_bytes, CudaHostAllocFlags::DEFAULT).unwrap();
     let allocator = ConcurrentStaticHostAllocator::new([allocation], log_trace_len_bytes);
     let mut setup_evaluations = Vec::with_capacity_in(trace_total_size, allocator);
-    // Every element is initialized by the transpose before the vector is read.
+    transpose_setup_trace(
+        trace,
+        &mut setup_evaluations.spare_capacity_mut()[..trace_total_size],
+    );
+    // SAFETY: The transpose initialized every retained element in the spare capacity.
     unsafe { setup_evaluations.set_len(trace_total_size) };
-    transpose_setup_trace(trace, &mut setup_evaluations);
     Arc::new(setup_evaluations)
 }
 
-fn transpose_setup_trace<const N: usize>(trace: &RowMajorTrace<BF, N, Global>, dst: &mut [BF]) {
+fn transpose_setup_trace<const N: usize>(
+    trace: &RowMajorTrace<BF, N, Global>,
+    dst: &mut [MaybeUninit<BF>],
+) {
     let rows = trace.len();
     assert_eq!(dst.len(), rows * trace.width());
     // Keep source rows hot while omitting padding from the retained columns.
@@ -212,7 +219,7 @@ fn transpose_setup_trace<const N: usize>(trace: &RowMajorTrace<BF, N, Global>, d
         let tile_rows = tile.len() / trace.padded_width;
         for (column, dst_column) in dst.chunks_exact_mut(rows).enumerate() {
             for (row, value) in dst_column[start..start + tile_rows].iter_mut().enumerate() {
-                *value = tile[row * trace.padded_width + column];
+                value.write(tile[row * trace.padded_width + column]);
             }
         }
     }
@@ -246,21 +253,22 @@ mod tests {
 
     #[test]
     fn setup_trace_storage_omits_row_padding() {
-        const ROWS: usize = 64;
-        for width in [1, 6, 12, 16, 32] {
-            let mut source =
-                RowMajorTrace::<BF, 32, Global>::new_zeroed_for_size(ROWS, width, Global);
-            for (index, value) in source.as_slice_mut().iter_mut().enumerate() {
-                *value = Mersenne31Field((index + 1) as u32);
+        for rows in [1, 16, 32, 64] {
+            for width in [1, 6, 12, 16, 32] {
+                let mut source =
+                    RowMajorTrace::<BF, 32, Global>::new_zeroed_for_size(rows, width, Global);
+                for (index, value) in source.as_slice_mut().iter_mut().enumerate() {
+                    *value = Mersenne31Field((index + 1) as u32);
+                }
+                let trace = get_setup_trace_from_row_major_trace(&source);
+                let expected = (0..width)
+                    .flat_map(|column| {
+                        (0..rows).map(move |row| Mersenne31Field((row * 32 + column + 1) as u32))
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(trace.as_slice(), expected);
+                assert_eq!(trace.capacity(), rows * width, "rows {rows}, width {width}");
             }
-            let trace = get_setup_trace_from_row_major_trace(&source);
-            let expected = (0..width)
-                .flat_map(|column| {
-                    (0..ROWS).map(move |row| Mersenne31Field((row * 32 + column + 1) as u32))
-                })
-                .collect::<Vec<_>>();
-            assert_eq!(trace.as_slice(), expected);
-            assert_eq!(trace.capacity(), ROWS * width, "width {width}");
         }
     }
 
