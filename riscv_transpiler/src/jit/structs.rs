@@ -238,9 +238,9 @@ impl<'a, N: NonDeterminismCSRSource> ContextImpl for DefaultContextImpl<'a, N> {
         self.non_determinism_source.read()
     }
 
-    fn write_nondeterminism(&mut self, value: u32, memory: &RamImage) {
+    fn write_nondeterminism(&mut self, value: u32, memory: &[u32]) {
         self.non_determinism_source
-            .write_with_memory_access(memory, value);
+            .write_with_memory_access(&memory, value);
     }
 
     fn receive_trace(

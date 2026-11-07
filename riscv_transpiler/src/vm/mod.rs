@@ -135,6 +135,14 @@ impl RamPeek for [u32] {
     }
 }
 
+// A slice reference gives sized generic and trait-object callers the same checked view.
+impl RamPeek for &[u32] {
+    #[inline(always)]
+    fn peek_word(&self, address: u32) -> u32 {
+        (**self).peek_word(address)
+    }
+}
+
 pub trait RAM: RamPeek {
     const REPLAY_NON_DETERMINISM_VIA_RAM_STUB: bool = false;
 
@@ -502,6 +510,10 @@ pub(crate) mod test {
         assert_eq!(words.peek_word(4), 11);
         assert_eq!(words.as_slice().peek_word(0), 7);
         assert_eq!(words.as_slice().peek_word(4), 11);
+        let slice = words.as_slice();
+        let dynamic_view: &dyn RamPeek = &slice;
+        assert_eq!(dynamic_view.peek_word(0), 7);
+        assert_eq!(dynamic_view.peek_word(4), 11);
     }
 
     #[test]

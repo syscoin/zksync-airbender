@@ -259,38 +259,38 @@ pub(super) fn collect_inits_and_teardowns(
 ) -> Vec<Vec<LazyInitAndTeardown>> {
     let mut chunks = vec![vec![]; worker.get_num_cores()];
     let mut dst = &mut chunks[..];
-    worker.scope(holder.memory.len(), |scope, geometry| {
+    let mut memory = &mut holder.memory[..];
+    let mut timestamps_rest = &mut holder.timestamps[..];
+    let memory_len = memory.len();
+    worker.scope(memory_len, |scope, geometry| {
         for thread_idx in 0..geometry.len() {
             let chunk_size = geometry.get_chunk_size(thread_idx);
             let chunk_start = geometry.get_chunk_start_pos(thread_idx);
-            let range = chunk_start..(chunk_start + chunk_size);
             let (el, rest) = dst.split_at_mut(1);
             dst = rest;
-            let values = &holder.memory[range.clone()];
-            let timestamps = &holder.timestamps[range];
-            Worker::smart_spawn(scope, thread_idx == geometry.len() - 1, move |_| unsafe {
-                let values_ptr = values.as_ptr() as *mut u32;
-                let timestamps_ptr = timestamps.as_ptr() as *mut TimestampScalar;
+            debug_assert_eq!(chunk_start, memory_len - memory.len());
+            debug_assert!(thread_idx + 1 < geometry.len() || memory.len() == chunk_size);
+            // Each worker owns disjoint mutable slices while collecting and clearing them.
+            let (values, rest) = memory.split_at_mut(chunk_size);
+            memory = rest;
+            let (timestamps, rest) = timestamps_rest.split_at_mut(chunk_size);
+            timestamps_rest = rest;
+            Worker::smart_spawn(scope, thread_idx == geometry.len() - 1, move |_| {
                 let el = &mut el[0];
-                for idx in 0..chunk_size {
-                    let timestamp_ptr = timestamps_ptr.add(idx);
-                    let timestamp = *timestamp_ptr;
-                    if timestamp != 0 {
-                        *timestamp_ptr = 0;
-                        let value_ptr = values_ptr.add(idx);
-                        let mut teardown_value = *value_ptr;
-                        *value_ptr = 0;
+                for (idx, (value, timestamp)) in values.iter_mut().zip(timestamps).enumerate() {
+                    if *timestamp != 0 {
+                        let teardown_timestamp = TimestampData::from_scalar(*timestamp);
+                        *timestamp = 0;
+                        let mut teardown_value = core::mem::take(value);
                         let address = (chunk_start + idx) << 2;
                         if address < common_constants::rom::ROM_BYTE_SIZE {
                             teardown_value = 0;
                         }
-                        let teardown_timestamp = TimestampData::from_scalar(timestamp);
-                        let value = LazyInitAndTeardown {
+                        el.push(LazyInitAndTeardown {
                             address: address as u32,
                             teardown_value,
                             teardown_timestamp,
-                        };
-                        el.push(value);
+                        });
                     }
                 }
             });
@@ -331,4 +331,75 @@ pub(super) fn get_inits_and_teardowns_chunks(
         }
         ShuffleRamInitsAndTeardownsHost { chunks }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn teardown_collection_preserves_partitions_and_clears_reused_holder() {
+        // Zero is valid for both arrays, and heap allocation avoids a multi-GiB stack value.
+        let mut holder = unsafe { Box::<MemoryHolder>::new_zeroed().assume_init() };
+        let worker = Worker::new_with_num_threads(3);
+        let geometry = worker.get_geometry(holder.memory.len());
+        let rom_words = common_constants::rom::ROM_BYTE_SIZE / size_of::<u32>();
+        let mut indices = vec![0, rom_words - 1, rom_words, holder.memory.len() - 1];
+        for partition in 1..geometry.len() {
+            let start = geometry.get_chunk_start_pos(partition);
+            indices.extend([start - 1, start]);
+        }
+        indices.sort_unstable();
+        indices.dedup();
+        holder.memory[7] = 0x12345678;
+
+        let expected = indices
+            .iter()
+            .enumerate()
+            .map(|(offset, &index)| {
+                let value = 100 + offset as u32;
+                let timestamp = INITIAL_TIMESTAMP + (offset as u64 + 1) * TIMESTAMP_STEP;
+                holder.memory[index] = value;
+                holder.timestamps[index] = timestamp;
+                LazyInitAndTeardown {
+                    address: (index * size_of::<u32>()) as u32,
+                    teardown_value: if index < rom_words { 0 } else { value },
+                    teardown_timestamp: TimestampData::from_scalar(timestamp),
+                }
+            })
+            .collect::<Vec<_>>();
+        let chunks = collect_inits_and_teardowns(&mut holder, &worker);
+        for (partition, values) in chunks.iter().enumerate() {
+            let start = geometry.get_chunk_start_pos(partition) * size_of::<u32>();
+            let end = start + geometry.get_chunk_size(partition) * size_of::<u32>();
+            assert!(values.iter().all(|value| {
+                start <= value.address as usize && (value.address as usize) < end
+            }));
+        }
+        assert_eq!(chunks.concat(), expected);
+        for &index in &indices {
+            assert_eq!(holder.memory[index], 0);
+            assert_eq!(holder.timestamps[index], 0);
+        }
+        assert_eq!(holder.memory[7], 0x12345678);
+        assert!(collect_inits_and_teardowns(&mut holder, &worker)
+            .iter()
+            .all(Vec::is_empty));
+
+        let reused_index = geometry.get_chunk_start_pos(1);
+        holder.memory[reused_index] = 0xabcdef01;
+        holder.timestamps[reused_index] = INITIAL_TIMESTAMP + 9 * TIMESTAMP_STEP;
+        assert_eq!(
+            collect_inits_and_teardowns(&mut holder, &worker).concat(),
+            vec![LazyInitAndTeardown {
+                address: (reused_index * size_of::<u32>()) as u32,
+                teardown_value: 0xabcdef01,
+                teardown_timestamp: TimestampData::from_scalar(
+                    INITIAL_TIMESTAMP + 9 * TIMESTAMP_STEP
+                ),
+            }],
+        );
+        assert_eq!(holder.memory[reused_index], 0);
+        assert_eq!(holder.timestamps[reused_index], 0);
+    }
 }

@@ -12,7 +12,7 @@ use itertools::Itertools;
 use log::{debug, trace};
 use riscv_transpiler::common_constants::ROM_WORD_SIZE;
 use riscv_transpiler::jit::{
-    ContextImpl, MachineState, MemoryHolder, RamImage, TraceChunk, MAX_NUM_COUNTERS,
+    ContextImpl, MachineState, MemoryHolder, TraceChunk, MAX_NUM_COUNTERS,
 };
 use riscv_transpiler::vm::NonDeterminismCSRSource;
 use std::mem::replace;
@@ -363,9 +363,9 @@ impl<ND: NonDeterminismCSRSource + Send + 'static, T: TracingType> ContextImpl
     }
 
     #[inline(always)]
-    fn write_nondeterminism(&mut self, value: u32, memory: &RamImage) {
+    fn write_nondeterminism(&mut self, value: u32, memory: &[u32]) {
         self.non_determinism_source
-            .write_with_memory_access(memory, value);
+            .write_with_memory_access(&memory, value);
     }
 
     fn receive_trace(

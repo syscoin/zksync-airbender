@@ -144,7 +144,7 @@ pub struct TraceChunk {
 pub trait ContextImpl {
     fn read_nondeterminism(&mut self) -> u32;
 
-    fn write_nondeterminism(&mut self, value: u32, memory: &RamImage);
+    fn write_nondeterminism(&mut self, value: u32, memory: &[u32]);
 
     fn receive_trace(
         &mut self,
