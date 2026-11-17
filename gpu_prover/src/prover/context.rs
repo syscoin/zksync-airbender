@@ -17,6 +17,9 @@ use era_cudart_sys::{CudaDeviceAttr, CudaError};
 use log::error;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
+use std::any::Any;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 pub struct DeviceProperties {
     pub l2_cache_size_bytes: usize,
@@ -83,8 +86,7 @@ fn allocator_chunk_bytes(log_chunk_size: u32) -> CudaResult<usize> {
 pub struct ProverContext {
     _device_context: DeviceContext,
     device_allocator: DeviceAllocator,
-    host_allocator: HostAllocator,
-    exec_stream: CudaStream,
+    host_pool: Rc<HostPool>,
     aux_stream: CudaStream,
     h2d_stream: CudaStream,
     device_allocator_mem_size: usize,
@@ -197,8 +199,11 @@ impl ProverContext {
         let context = Self {
             _device_context: device_context,
             device_allocator,
-            host_allocator,
-            exec_stream,
+            host_pool: Rc::new(HostPool {
+                allocator: host_allocator,
+                stream: exec_stream,
+                retired: RefCell::new(Vec::new()),
+            }),
             aux_stream,
             h2d_stream,
             device_allocator_mem_size,
@@ -211,7 +216,7 @@ impl ProverContext {
     }
 
     pub fn get_host_allocator(&self) -> HostAllocator {
-        self.host_allocator.clone()
+        self.host_pool.allocator.clone()
     }
 
     pub fn get_device_id(&self) -> i32 {
@@ -223,7 +228,7 @@ impl ProverContext {
     }
 
     pub fn get_exec_stream(&self) -> &CudaStream {
-        &self.exec_stream
+        &self.host_pool.stream
     }
 
     pub fn get_aux_stream(&self) -> &CudaStream {
@@ -263,15 +268,31 @@ impl ProverContext {
         result
     }
 
-    pub(crate) fn alloc_host<T>(&self, value: T) -> HostAllocation<T> {
-        HostAllocation(Box::new_in(value, self.get_host_allocator()))
+    pub(crate) fn alloc_host<T: 'static>(&self, value: T) -> CudaResult<HostAllocation<T>> {
+        self.host_pool.prepare(size_of::<T>())?;
+        let data = Box::try_new_in(value, self.get_host_allocator())
+            .map_err(|_| CudaError::ErrorMemoryAllocation)?;
+        Ok(HostAllocation::new(data, self.host_pool.clone()))
     }
 
-    pub(crate) fn alloc_host_slice<T: Default>(&self, len: usize) -> HostAllocation<[T]> {
-        let mut buffer = Vec::with_capacity_in(len, self.get_host_allocator());
+    pub(crate) fn alloc_host_slice<T: Default + 'static>(
+        &self,
+        len: usize,
+    ) -> CudaResult<HostAllocation<[T]>> {
+        let size = size_of::<T>()
+            .checked_mul(len)
+            .ok_or(CudaError::ErrorMemoryAllocation)?;
+        self.host_pool.prepare(size)?;
+        let mut buffer = Vec::new_in(self.get_host_allocator());
+        buffer
+            .try_reserve_exact(len)
+            .map_err(|_| CudaError::ErrorMemoryAllocation)?;
         // CUDA copy APIs borrow typed slices even when filling them from the device.
         buffer.resize_with(len, T::default);
-        HostAllocation(buffer.into_boxed_slice())
+        Ok(HostAllocation::new(
+            buffer.into_boxed_slice(),
+            self.host_pool.clone(),
+        ))
     }
 
     pub fn get_mem_size(&self) -> usize {
@@ -406,26 +427,83 @@ mod tests {
     }
 }
 
-pub(crate) struct HostAllocation<T: ?Sized>(Box<T, HostAllocator>);
+// Scratch accessors are copied into CUDA host callbacks and asynchronous transfers on the
+// execution stream. Keep their owning boxes on the prover thread until that stream is idle.
+struct HostPool {
+    allocator: HostAllocator,
+    stream: CudaStream,
+    retired: RefCell<Vec<Box<dyn Any>>>,
+}
 
-impl<T: ?Sized> HostAllocation<T> {
+impl HostPool {
+    fn prepare(&self, requested: usize) -> CudaResult<()> {
+        let mut retired = self.retired.borrow_mut();
+        if retired.is_empty() {
+            return Ok(());
+        }
+        if self.stream.query()? {
+            retired.clear();
+        } else if self.allocator.get_largest_free_range() < requested {
+            // Let independent kernels and callbacks overlap until another allocation actually
+            // needs retired storage. Reclaiming earlier would let CPU writes race queued DMA.
+            self.stream.synchronize()?;
+            retired.clear();
+        }
+        Ok(())
+    }
+}
+
+impl Drop for HostPool {
+    fn drop(&mut self) {
+        let retired = self.retired.get_mut();
+        if !retired.is_empty() {
+            if let Err(error) = self.stream.synchronize() {
+                // The CUDA context cannot establish completion. Preserve the backing storage
+                // for any in-flight callback until process teardown.
+                error!("failed to drain pinned host scratch on shutdown: {error:?}");
+                std::mem::forget(std::mem::take(retired));
+            }
+        }
+    }
+}
+
+pub(crate) struct HostAllocation<T: ?Sized + 'static> {
+    data: Option<Box<T, HostAllocator>>,
+    pool: Rc<HostPool>,
+}
+
+impl<T: ?Sized + 'static> HostAllocation<T> {
+    fn new(data: Box<T, HostAllocator>, pool: Rc<HostPool>) -> Self {
+        Self {
+            data: Some(data),
+            pool,
+        }
+    }
+
     pub fn get_accessor(&self) -> UnsafeAccessor<T> {
-        UnsafeAccessor::new(&self.0)
+        UnsafeAccessor::new(self.data.as_deref().unwrap())
     }
 
     pub fn get_mut_accessor(&mut self) -> UnsafeMutAccessor<T> {
-        UnsafeMutAccessor::new(&mut self.0)
+        UnsafeMutAccessor::new(self.data.as_deref_mut().unwrap())
     }
 }
 
-impl<T> CudaSlice<T> for HostAllocation<[T]> {
+impl<T: ?Sized + 'static> Drop for HostAllocation<T> {
+    fn drop(&mut self) {
+        let data = self.data.take().unwrap();
+        self.pool.retired.borrow_mut().push(Box::new(data));
+    }
+}
+
+impl<T: 'static> CudaSlice<T> for HostAllocation<[T]> {
     unsafe fn as_slice(&self) -> &[T] {
-        self.0.as_slice()
+        self.data.as_deref().unwrap()
     }
 }
 
-impl<T> CudaSliceMut<T> for HostAllocation<[T]> {
+impl<T: 'static> CudaSliceMut<T> for HostAllocation<[T]> {
     unsafe fn as_mut_slice(&mut self) -> &mut [T] {
-        self.0.as_mut_slice()
+        self.data.as_deref_mut().unwrap()
     }
 }
