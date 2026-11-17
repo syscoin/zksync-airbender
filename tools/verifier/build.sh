@@ -58,7 +58,7 @@ build_artifacts() {
 
   # Each artifact has its own target directory to not collide with each other, allowing parallel building & reproducible builds.
   local artifact_target_dir="target/${name}"
-  local objcopy_args=(-Z build-std=core,panic_abort,alloc --features "${features}" --no-default-features)
+  local objcopy_args=(--locked -Z build-std=core,panic_abort,alloc --features "${features}" --no-default-features)
 
   CARGO_TARGET_DIR="$artifact_target_dir" cargo objcopy --release "${objcopy_args[@]}" -- -O binary "${name}.bin"
   CARGO_TARGET_DIR="$artifact_target_dir" cargo objcopy --release "${objcopy_args[@]}" -- -R .text "${name}.elf"
