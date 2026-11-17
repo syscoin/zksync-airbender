@@ -111,9 +111,9 @@ impl QueriesOutput {
         let num_required_words = num_required_bits.next_multiple_of(u32::BITS) / u32::BITS;
         let num_required_words_padded =
             (num_required_words as usize + 1).next_multiple_of(BLAKE2S_DIGEST_SIZE_U32_WORDS);
-        let mut query_indexes = unsafe { context.alloc_host_uninit_slice(num_queries) };
+        let mut query_indexes = context.alloc_host_slice(num_queries)?;
         let query_indexes_accessor = query_indexes.get_mut_accessor();
-        let mut tree_indexes = unsafe { context.alloc_host_uninit_slice(num_queries) };
+        let mut tree_indexes = context.alloc_host_slice(num_queries)?;
         let tree_indexes_accessor = tree_indexes.get_mut_accessor();
         let get_query_indexes = move || unsafe {
             let query_indexes = query_indexes_accessor.get_mut();
@@ -133,7 +133,7 @@ impl QueriesOutput {
         callbacks.schedule(get_query_indexes, stream)?;
         let mut leafs_and_digest_sets = Vec::with_capacity(lde_factor);
         for coset_idx in 0..lde_factor {
-            let mut h_tree_indexes = unsafe { context.alloc_host_uninit_slice(num_queries) };
+            let mut h_tree_indexes = context.alloc_host_slice(num_queries)?;
             let h_tree_indexes_accessor = h_tree_indexes.get_mut_accessor();
             let copy_tree_indexes = move || unsafe {
                 h_tree_indexes_accessor
@@ -291,7 +291,7 @@ impl QueriesOutput {
             &mut leafs_matrix,
             stream,
         )?;
-        let mut leafs = unsafe { context.alloc_host_uninit_slice(leafs_len) };
+        let mut leafs = context.alloc_host_slice(leafs_len)?;
         memory_copy_async(
             unsafe { leafs.get_mut_accessor().get_mut() },
             &d_leafs,
@@ -312,7 +312,7 @@ impl QueriesOutput {
         let digests_len = queries_count * layers_count as usize;
         let mut d_digests = context.alloc(digests_len, AllocationPlacement::BestFit)?;
         gather_merkle_paths(indexes, tree, &mut d_digests, layers_count, stream)?;
-        let mut digests = unsafe { context.alloc_host_uninit_slice(digests_len) };
+        let mut digests = context.alloc_host_slice(digests_len)?;
         memory_copy_async(
             unsafe { digests.get_mut_accessor().get_mut() },
             &d_digests,

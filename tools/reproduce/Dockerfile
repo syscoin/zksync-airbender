@@ -19,7 +19,7 @@ RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain "$RUST_VERS
     && rustup target add riscv32i-unknown-none-elf \
     && rustup component add llvm-tools-preview \
     && rustup component add rust-src \
-    && cargo install cargo-binutils
+    && cargo install cargo-binutils --version 0.4.0 --locked
 
 COPY . zksync-airbender
 

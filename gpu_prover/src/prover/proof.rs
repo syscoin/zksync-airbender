@@ -272,7 +272,7 @@ pub(crate) fn prove<'a, A: GoodAllocator>(
     // fri queries pow
     let fri_queries_pow_range = device_tracing::Range::new("fri_queries_pow")?;
     fri_queries_pow_range.start(stream)?;
-    let mut fri_queries_pow_challenge = unsafe { context.alloc_host_uninit::<u64>() };
+    let mut fri_queries_pow_challenge = context.alloc_host(0u64)?;
     let fri_queries_pow_bits = security_config.fri_queries_pow_bits;
     assert_ne!(fri_queries_pow_bits, 0);
     search_pow_challenge(
@@ -371,7 +371,7 @@ fn initialize_seed<'a>(
     callbacks: &mut Callbacks<'a>,
     context: &ProverContext,
 ) -> CudaResult<HostAllocation<Seed>> {
-    let mut seed = unsafe { context.alloc_host_uninit::<Seed>() };
+    let mut seed = context.alloc_host(Seed(Default::default()))?;
     let seed_accessor = seed.get_mut_accessor();
     let setup_tree_caps = setup.trees_and_caps.caps.clone();
     let witness_tree_cap_accessors = stage_1_output

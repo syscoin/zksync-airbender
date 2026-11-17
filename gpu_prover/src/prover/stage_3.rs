@@ -67,7 +67,7 @@ impl StageThreeOutput {
         )?;
         let stream = context.get_exec_stream();
         let seed_accessor = seed.get_mut_accessor();
-        let mut pow_challenge = unsafe { context.alloc_host_uninit::<u64>() };
+        let mut pow_challenge = context.alloc_host(0u64)?;
         let pow_bits = security_config.quotient_alpha_pow_bits;
         search_pow_challenge(
             seed,
@@ -83,14 +83,14 @@ impl StageThreeOutput {
             AlphaPowersLayout::new(&circuit, cached_data.num_stage_3_quotient_terms);
         let alpha_powers_count = alpha_powers_layout.precomputation_size;
         let tau = domain_generator_for_size::<E2>((trace_len as u64) << log_lde_factor);
-        let mut h_alpha_powers = unsafe { context.alloc_host_uninit_slice(alpha_powers_count) };
+        let mut h_alpha_powers = context.alloc_host_slice(alpha_powers_count)?;
         let h_alpha_powers_accessor = h_alpha_powers.get_mut_accessor();
-        let mut h_beta_powers = unsafe { context.alloc_host_uninit_slice(BETA_POWERS_COUNT) };
+        let mut h_beta_powers = context.alloc_host_slice(BETA_POWERS_COUNT)?;
         let h_beta_powers_accessor = h_beta_powers.get_mut_accessor();
-        let mut h_helpers = unsafe { context.alloc_host_uninit_slice(MAX_HELPER_VALUES) };
+        let mut h_helpers = context.alloc_host_slice(MAX_HELPER_VALUES)?;
         let h_helpers_accessor = h_helpers.get_mut_accessor();
         let mut h_constants_times_challenges =
-            unsafe { context.alloc_host_uninit::<ConstantsTimesChallenges>() };
+            context.alloc_host(ConstantsTimesChallenges::default())?;
         let h_constants_times_challenges_accessor = h_constants_times_challenges.get_mut_accessor();
         let stage_2_lookup_challenges_accessor = stage_2_output
             .lookup_challenges

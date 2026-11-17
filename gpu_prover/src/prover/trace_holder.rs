@@ -266,7 +266,7 @@ impl TraceHolder<BF> {
         source_coset_index: usize,
         context: &ProverContext,
     ) -> CudaResult<()> {
-        let tree_caps = allocate_tree_caps(self.log_lde_factor, self.log_tree_cap_size, context);
+        let tree_caps = allocate_tree_caps(self.log_lde_factor, self.log_tree_cap_size, context)?;
         assert!(self.tree_caps.replace(tree_caps).is_none());
         self.commit_and_transfer_tree_caps(source_coset_index, context)?;
         self.extend(source_coset_index, context)?;
@@ -354,13 +354,13 @@ impl TraceHolder<BF> {
                 gather_merkle_paths(indexes, &tree, &mut d_merkle_paths, layers_count, stream)?;
             }
         };
-        let mut leafs = unsafe { context.alloc_host_uninit_slice(leafs_len) };
+        let mut leafs = context.alloc_host_slice(leafs_len)?;
         memory_copy_async(
             unsafe { leafs.get_mut_accessor().get_mut() },
             &d_leafs,
             stream,
         )?;
-        let mut merkle_paths = unsafe { context.alloc_host_uninit_slice(digests_len) };
+        let mut merkle_paths = context.alloc_host_slice(digests_len)?;
         memory_copy_async(
             unsafe { merkle_paths.get_mut_accessor().get_mut() },
             &d_merkle_paths,
@@ -828,16 +828,16 @@ pub(crate) fn allocate_tree_caps(
     log_lde_factor: u32,
     log_tree_cap_size: u32,
     context: &ProverContext,
-) -> Vec<HostAllocation<[Digest]>> {
+) -> CudaResult<Vec<HostAllocation<[Digest]>>> {
     let lde_factor = 1 << log_lde_factor;
     let log_coset_tree_cap_size = log_tree_cap_size - log_lde_factor;
     let coset_tree_cap_size = 1 << log_coset_tree_cap_size;
     let mut result = Vec::with_capacity(lde_factor);
     for _ in 0..lde_factor {
-        let tree_cap = unsafe { context.alloc_host_uninit_slice(coset_tree_cap_size) };
+        let tree_cap = context.alloc_host_slice(coset_tree_cap_size)?;
         result.push(tree_cap);
     }
-    result
+    Ok(result)
 }
 
 fn make_evaluations_sum_to_zero(
