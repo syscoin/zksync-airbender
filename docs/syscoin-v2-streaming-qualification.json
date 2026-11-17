@@ -297,5 +297,154 @@
       4290478239
     ],
     "unified_chain_words_hex": "69ba06c1a7ca60828dcb2d6ef3d56805d69660c6219694340a6f3b91ffbb809f"
+  },
+  "source_and_assets_revision": "a141a2990d1a8a7006d50b394e7c62398cf7fd2b",
+  "streaming_retained_guest_native_chain_confirmed": true,
+  "truncated_unified_oracle": {
+    "input_sha256": "3dcf48bcbc95ec33c6cf9da2fbbf7a0e6408d5a27e3a2bbd50858cb340a514f5",
+    "complete_oracle_words": 555168,
+    "supplied_oracle_words": 555167,
+    "default": {
+      "next_read_rejected": true,
+      "stopped_pc": 908496,
+      "successful_exit_pc": 1064752
+    },
+    "streaming": {
+      "next_read_rejected": true,
+      "stopped_pc": 907688,
+      "successful_exit_pc": 1063944
+    }
+  },
+  "corrected_os_guest": {
+    "os_revision_prefix": "3c9bdcbc",
+    "bin_sha256": "536ac0ca152db40430c7e9c0ebac0a814e516b889efc029b9c6cca0140f62cdf",
+    "text_sha256": "aa7ef4d303b243bcc1df24fb85c66655e91b551a730dfc19655ec374cd4d2c5f",
+    "default_chain": {
+      "app_end_params": [
+        3663570152,
+        4173903943,
+        2495119803,
+        1962296943,
+        33824161,
+        2475923638,
+        2560395390,
+        2041520630
+      ],
+      "base_chain": [
+        2568030437,
+        1185036990,
+        685765785,
+        2463024875,
+        2241881662,
+        3205642959,
+        3530117681,
+        832882880
+      ],
+      "unrolled_setup_end_params": [
+        1757619238,
+        3867707985,
+        2589696740,
+        1147332593,
+        2464853468,
+        2051242771,
+        2798820451,
+        3200077023
+      ],
+      "unrolled_chain": [
+        3877392435,
+        527484776,
+        3033476532,
+        117998260,
+        3772537395,
+        2329149334,
+        1715787962,
+        2035499317
+      ],
+      "unified_setup_end_params": [
+        127830082,
+        234200099,
+        3482646709,
+        3809141483,
+        2686257166,
+        629858516,
+        3373154251,
+        3606817127
+      ],
+      "unified_chain": [
+        347547154,
+        3278936102,
+        1765529674,
+        4284489224,
+        2157947891,
+        429977575,
+        3900820039,
+        2740166159
+      ],
+      "unified_chain_words_hex": "14b72612c3709826693bd84aff601e08809fabf319a0efe7e881ca47a3539e0f"
+    },
+    "streaming_chain": {
+      "app_end_params": [
+        3663570152,
+        4173903943,
+        2495119803,
+        1962296943,
+        33824161,
+        2475923638,
+        2560395390,
+        2041520630
+      ],
+      "base_chain": [
+        2568030437,
+        1185036990,
+        685765785,
+        2463024875,
+        2241881662,
+        3205642959,
+        3530117681,
+        832882880
+      ],
+      "unrolled_setup_end_params": [
+        1246811872,
+        763567903,
+        2321549897,
+        1008692255,
+        435509740,
+        646282816,
+        1489050924,
+        150434736
+      ],
+      "unrolled_chain": [
+        288574900,
+        2166710881,
+        45322356,
+        2442653294,
+        1205308614,
+        3955581666,
+        2395890679,
+        3158417534
+      ],
+      "unified_setup_end_params": [
+        1854488687,
+        1121870043,
+        3225776498,
+        557394479,
+        1984347491,
+        2270075173,
+        3179146934,
+        823528011
+      ],
+      "unified_chain": [
+        3410258467,
+        185288302,
+        2766330873,
+        1846184044,
+        2167203027,
+        1053421008,
+        3051264078,
+        636067983
+      ],
+      "unified_chain_words_hex": "cb446a230b0b466ea4e2dbf96e0a886c812ce4d33ec9edd0b5de984e25e9a08f"
+    },
+    "method": "The layer folds use freshly native-derived application-end words and native-verified recursive setup snapshots. The reported three proof comparisons use the separately identified retained guest."
   }
 }
