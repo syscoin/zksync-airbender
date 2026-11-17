@@ -1,4 +1,3 @@
-use core::mem::MaybeUninit;
 use non_determinism_source::NonDeterminismSource;
 
 pub const DIGEST_SIZE_U32_WORDS: usize = 8;
@@ -44,18 +43,8 @@ impl<const N: usize> MerkleTreeCap<N> {
     }
 
     pub fn new<I: NonDeterminismSource>() -> Self {
-        unsafe {
-            let mut new = Self {
-                cap: [MaybeUninit::uninit(); N].map(|el| el.assume_init()),
-            };
-
-            for dst in new.cap.iter_mut() {
-                for dst in dst.iter_mut() {
-                    *dst = I::read_word();
-                }
-            }
-
-            new
+        Self {
+            cap: core::array::from_fn(|_| core::array::from_fn(|_| I::read_word())),
         }
     }
 

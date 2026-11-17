@@ -70,7 +70,7 @@ pub unsafe fn verify_unified_circuit_statement<const BASE_LAYER: bool>(
     // we should in parallel verify proofs, and drag along the transcript to assert equality of challenges
     let mut transcript = Blake2sBufferingTranscript::new();
 
-    let mut registers_buffer = MaybeUninit::<[u32; 32 + 2 * 32]>::uninit().assume_init();
+    let mut registers_buffer = [0u32; 32 + 2 * 32];
 
     // first we need to get final register values and timestamps
     for reg_idx in 0..32 {
@@ -103,9 +103,9 @@ pub unsafe fn verify_unified_circuit_statement<const BASE_LAYER: bool>(
 
     // loop over main circuit type
     let mut proof_output_0: ProofOutput<CAP_SIZE, NUM_COSETS, NUM_DELEGATION_CHALLENGES, 1, 1> =
-        MaybeUninit::uninit().assume_init();
+        ProofOutput::empty();
     let mut proof_output_1: ProofOutput<CAP_SIZE, NUM_COSETS, NUM_DELEGATION_CHALLENGES, 1, 1> =
-        MaybeUninit::uninit().assume_init();
+        ProofOutput::empty();
     let mut state_variables = ProofPublicInputs::uninit();
 
     let num_circuits = verifier_common::DefaultNonDeterminismSource::read_word();
@@ -222,7 +222,7 @@ pub unsafe fn verify_unified_circuit_statement<const BASE_LAYER: bool>(
     if NUM_DELEGATION_CHALLENGES > 0 {
         let mut previous_delegation_type = 0u32;
         let mut state_variables = ProofPublicInputs::uninit();
-        let mut delegation_proof_output = MaybeUninit::uninit().assume_init();
+        let mut delegation_proof_output = ProofOutput::empty();
 
         let mut total_delegation_requests = 0u64;
 
@@ -344,7 +344,7 @@ pub unsafe fn verify_unified_circuit_statement<const BASE_LAYER: bool>(
 
     // Now we only need to reason about "which program do we execute", and "did it finish successfully or not".
 
-    let mut output: [u32; 16] = MaybeUninit::uninit().assume_init();
+    let mut output: [u32; 16] = [0u32; 16];
     // in any case we carry registers 10-17 to the next layer - those are the output of the base program
     for i in 0..8 {
         output[i] = registers_buffer[(10 + i) * 3];
@@ -387,7 +387,7 @@ pub unsafe fn verify_unified_circuit_statement<const BASE_LAYER: bool>(
         // chain of executed programs
 
         let mut aux_registers: [u32; BLAKE2S_DIGEST_SIZE_U32_WORDS] =
-            MaybeUninit::uninit().assume_init();
+            [0u32; BLAKE2S_DIGEST_SIZE_U32_WORDS];
         for i in 8..16 {
             let value = registers_buffer[(10 + i) * 3];
             aux_registers[i - 8] = value;
@@ -395,7 +395,7 @@ pub unsafe fn verify_unified_circuit_statement<const BASE_LAYER: bool>(
 
         // So prover can ALWAYS present a preimage
         let mut preimage: [u32; BLAKE2S_DIGEST_SIZE_U32_WORDS * 2] =
-            MaybeUninit::uninit().assume_init();
+            [0u32; BLAKE2S_DIGEST_SIZE_U32_WORDS * 2];
         for i in 0..BLAKE2S_DIGEST_SIZE_U32_WORDS * 2 {
             preimage[i] = verifier_common::DefaultNonDeterminismSource::read_word();
         }
@@ -424,7 +424,7 @@ pub unsafe fn verify_unified_circuit_statement<const BASE_LAYER: bool>(
         } else {
             // concatenate and hash
             let mut input: [u32; BLAKE2S_DIGEST_SIZE_U32_WORDS * 2] =
-                MaybeUninit::uninit().assume_init();
+                [0u32; BLAKE2S_DIGEST_SIZE_U32_WORDS * 2];
             for i in 0..8 {
                 input[i] = aux_registers[i];
                 input[i + 8] = end_params_output.0[i];

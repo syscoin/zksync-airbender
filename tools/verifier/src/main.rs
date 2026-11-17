@@ -188,14 +188,11 @@ fn print_panic(_info: &core::panic::PanicInfo) {
 
 #[cfg(feature = "verifier_tests")]
 unsafe fn workload() -> ! {
-    use core::mem::MaybeUninit;
     use verifier::ProofPublicInputs;
 
     use verifier::verifier_common::ProofOutput;
 
-    #[allow(invalid_value)]
-    let mut proof_output: ProofOutput<_, _, _, _, _> =
-        unsafe { MaybeUninit::uninit().assume_init() };
+    let mut proof_output = ProofOutput::empty();
     let mut state_variables = ProofPublicInputs::uninit();
 
     unsafe {

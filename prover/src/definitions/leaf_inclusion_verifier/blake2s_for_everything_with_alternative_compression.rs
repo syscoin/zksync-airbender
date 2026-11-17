@@ -1,4 +1,3 @@
-use core::mem::MaybeUninit;
 
 use super::*;
 use blake2s_u32::state_with_extended_control::*;
@@ -61,13 +60,7 @@ impl LeafInclusionVerifier for Blake2sForEverythingVerifierWithAlternativeCompre
 
         // last round unrolled padding, and here we will copy to temporary buffer
         {
-            // NOTE: here we have to "touch" full buffer
-            let mut buffer: AlignedArray64<u32, BLAKE2S_BLOCK_SIZE_U32_WORDS> =
-                MaybeUninit::uninit().assume_init();
-            blake2s_u32::spec_memzero_u32(
-                buffer.as_mut_ptr_range().start,
-                buffer.as_mut_ptr_range().end,
-            );
+            let mut buffer = AlignedArray64::<u32, BLAKE2S_BLOCK_SIZE_U32_WORDS>::from_value(0);
             let src_ptr = src_ptr.cast::<u32>();
             let dst_ptr = buffer.as_mut_ptr().cast::<u32>();
             blake2s_u32::spec_memcopy_u32_nonoverlapping(src_ptr, dst_ptr, last_round_len);

@@ -3,7 +3,8 @@ use crate::circuit_type::{CircuitType, UnrolledCircuitType};
 use crate::execution::messages::SimulationResult;
 use crate::execution::messages::{InitsAndTeardownsData, WorkerResult};
 use crate::execution::simulation_runner::{
-    EmptyInitsAndTeardownsStreamer, LockedBoxedMemoryHolder, LockedBoxedTraceChunk, SimulationRunner, Snapshot,
+    EmptyInitsAndTeardownsStreamer, LockedBoxedMemoryHolder, LockedBoxedTraceChunk,
+    SimulationRunner, Snapshot,
 };
 use crate::execution::tracing::{Tracer, TracingType};
 use crate::machine_type::MachineType;
