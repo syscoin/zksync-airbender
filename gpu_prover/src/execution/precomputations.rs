@@ -191,7 +191,7 @@ fn get_setup_trace_from_row_major_trace<const N: usize>(
     let log_trace_len_bytes = trace_len_bytes.trailing_zeros();
     if let Some(dir) = setup_trace_dir() {
         match build_mapped(&dir, trace_total_size, |dst| {
-            transpose_setup_trace(trace, dst);
+            transpose_setup_trace(trace, dst, std::convert::identity);
         }) {
             Ok(mapped) => return Arc::new(SetupTrace::Mapped(mapped)),
             // A trace that cannot be mapped is not a reason to fail the run: fall back to
@@ -211,13 +211,18 @@ fn get_setup_trace_from_row_major_trace<const N: usize>(
     transpose_setup_trace(
         trace,
         &mut setup_evaluations.spare_capacity_mut()[..trace_total_size],
+        std::mem::MaybeUninit::new,
     );
     // SAFETY: the transpose wrote every logical column for every row.
     unsafe { setup_evaluations.set_len(trace_total_size) };
     Arc::new(SetupTrace::Pinned(setup_evaluations))
 }
 
-fn transpose_setup_trace<const N: usize, T: From<BF>>(trace: &RowMajorTrace<BF, N, Global>, dst: &mut [T]) {
+fn transpose_setup_trace<const N: usize, T>(
+    trace: &RowMajorTrace<BF, N, Global>,
+    dst: &mut [T],
+    initialize: impl Fn(BF) -> T,
+) {
     let rows = trace.len();
     assert_eq!(dst.len(), rows * trace.width());
     // Keep a tile of source rows hot while writing the compact destination columns.
@@ -232,7 +237,7 @@ fn transpose_setup_trace<const N: usize, T: From<BF>>(trace: &RowMajorTrace<BF, 
         let tile_rows = tile.len() / trace.padded_width;
         for (column, dst_column) in dst.chunks_exact_mut(rows).enumerate() {
             for (row, value) in dst_column[start..start + tile_rows].iter_mut().enumerate() {
-                *value = tile[row * trace.padded_width + column].into();
+                *value = initialize(tile[row * trace.padded_width + column]);
             }
         }
     }
