@@ -208,12 +208,16 @@ fn get_setup_trace_from_row_major_trace<const N: usize>(
         HostAllocation::alloc(trace_total_size_bytes, CudaHostAllocFlags::DEFAULT).unwrap();
     let allocator = ConcurrentStaticHostAllocator::new([allocation], log_trace_len_bytes);
     let mut setup_evaluations = Vec::with_capacity_in(trace_total_size, allocator);
+    transpose_setup_trace(
+        trace,
+        &mut setup_evaluations.spare_capacity_mut()[..trace_total_size],
+    );
+    // SAFETY: the transpose wrote every logical column for every row.
     unsafe { setup_evaluations.set_len(trace_total_size) };
-    transpose_setup_trace(trace, &mut setup_evaluations);
     Arc::new(SetupTrace::Pinned(setup_evaluations))
 }
 
-fn transpose_setup_trace<const N: usize>(trace: &RowMajorTrace<BF, N, Global>, dst: &mut [BF]) {
+fn transpose_setup_trace<const N: usize, T: From<BF>>(trace: &RowMajorTrace<BF, N, Global>, dst: &mut [T]) {
     let rows = trace.len();
     assert_eq!(dst.len(), rows * trace.width());
     // Keep a tile of source rows hot while writing the compact destination columns.
@@ -228,7 +232,7 @@ fn transpose_setup_trace<const N: usize>(trace: &RowMajorTrace<BF, N, Global>, d
         let tile_rows = tile.len() / trace.padded_width;
         for (column, dst_column) in dst.chunks_exact_mut(rows).enumerate() {
             for (row, value) in dst_column[start..start + tile_rows].iter_mut().enumerate() {
-                *value = tile[row * trace.padded_width + column];
+                *value = tile[row * trace.padded_width + column].into();
             }
         }
     }
