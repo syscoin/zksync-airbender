@@ -59,7 +59,7 @@ fn test_unified_cycle_or_delegation() {
     }
 
     // Spawn a new thread as it's large stack in debug builds
-    let result = std::thread::Builder::new()
+    std::thread::Builder::new()
         .name("verifier thread".to_string())
         .stack_size(1 << 27)
         .spawn(move || {
@@ -78,14 +78,9 @@ fn test_unified_cycle_or_delegation() {
                 )
             };
         })
-        .map(|t| t.join());
-
-    match result {
-        Ok(..) => {}
-        Err(err) => {
-            panic!("Verifier thread fails with {}", err);
-        }
-    }
+        .expect("spawn verifier thread")
+        .join()
+        .expect("proof verifier panicked");
 }
 
 #[test]
@@ -122,7 +117,7 @@ fn test_unrolled_circuit() {
     }
 
     // Spawn a new thread as it's large stack in debug builds
-    let result = std::thread::Builder::new()
+    std::thread::Builder::new()
         .name("verifier thread".to_string())
         .stack_size(1 << 27)
         .spawn(move || {
@@ -141,14 +136,9 @@ fn test_unrolled_circuit() {
                 )
             };
         })
-        .map(|t| t.join());
-
-    match result {
-        Ok(..) => {}
-        Err(err) => {
-            panic!("Verifier thread fails with {}", err);
-        }
-    }
+        .expect("spawn verifier thread")
+        .join()
+        .expect("proof verifier panicked");
 }
 
 #[test]
