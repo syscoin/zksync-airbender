@@ -315,7 +315,7 @@
       "successful_exit_pc": 1063944
     }
   },
-  "corrected_os_guest": {
+  "corrected_os_normal_ci_guest": {
     "os_revision_prefix": "3c9bdcbc",
     "bin_sha256": "536ac0ca152db40430c7e9c0ebac0a814e516b889efc029b9c6cca0140f62cdf",
     "text_sha256": "aa7ef4d303b243bcc1df24fb85c66655e91b551a730dfc19655ec374cd4d2c5f",
@@ -446,5 +446,138 @@
       "unified_chain_words_hex": "cb446a230b0b466ea4e2dbf96e0a886c812ce4d33ec9edd0b5de984e25e9a08f"
     },
     "method": "The layer folds use freshly native-derived application-end words and native-verified recursive setup snapshots. The reported three proof comparisons use the separately identified retained guest."
-  }
+  },
+  "corrected_os_release_docker_guest": {
+    "bin_sha256": "9727a6d5c1301bc0fdb9ef7b46027917aef51c9158a7678dec1287bffb9b3e4d",
+    "text_sha256": "4648aea720d7acb9317d90047b2640f85baacf15bfdfe340c21c03dc3984f932",
+    "default_chain": {
+      "app_end_params": [
+        839576545,
+        3543917221,
+        2899651412,
+        806767598,
+        3089479141,
+        4060592819,
+        839382617,
+        2072453320
+      ],
+      "base_chain": [
+        2914759842,
+        1899467952,
+        1944497128,
+        2562991871,
+        1719452737,
+        3569220438,
+        748773170,
+        1790974896
+      ],
+      "unrolled_setup_end_params": [
+        1757619238,
+        3867707985,
+        2589696740,
+        1147332593,
+        2464853468,
+        2051242771,
+        2798820451,
+        3200077023
+      ],
+      "unrolled_chain": [
+        4275528380,
+        1104877345,
+        803701673,
+        3297802092,
+        714874844,
+        3580318949,
+        530856081,
+        1776175505
+      ],
+      "unified_setup_end_params": [
+        127830082,
+        234200099,
+        3482646709,
+        3809141483,
+        2686257166,
+        629858516,
+        3373154251,
+        3606817127
+      ],
+      "unified_chain": [
+        3210469728,
+        3427495935,
+        857477333,
+        2439585292,
+        1600315163,
+        3763909344,
+        4003237832,
+        3361999974
+      ],
+      "unified_chain_words_hex": "bf5be160cc4b6fff331c10d591691e0c5f62df1be058b2e0ee9c8fc8c8640c66"
+    },
+    "streaming_chain": {
+      "app_end_params": [
+        839576545,
+        3543917221,
+        2899651412,
+        806767598,
+        3089479141,
+        4060592819,
+        839382617,
+        2072453320
+      ],
+      "base_chain": [
+        2914759842,
+        1899467952,
+        1944497128,
+        2562991871,
+        1719452737,
+        3569220438,
+        748773170,
+        1790974896
+      ],
+      "unrolled_setup_end_params": [
+        1246811872,
+        763567903,
+        2321549897,
+        1008692255,
+        435509740,
+        646282816,
+        1489050924,
+        150434736
+      ],
+      "unrolled_chain": [
+        1169883356,
+        1612050386,
+        1803456244,
+        3320466825,
+        2717917283,
+        3443518942,
+        2571201734,
+        409014463
+      ],
+      "unified_setup_end_params": [
+        1854488687,
+        1121870043,
+        3225776498,
+        557394479,
+        1984347491,
+        2270075173,
+        3179146934,
+        823528011
+      ],
+      "unified_chain": [
+        1148939967,
+        586518085,
+        1605236586,
+        3121138245,
+        2127113227,
+        3179657326,
+        759900356,
+        115936330
+      ],
+      "unified_chain_words_hex": "447b6ebf22f58e455fadf76aba08ca457ec92c0bbd85b86e2d4b28c406e90c4a"
+    },
+    "method": "Independent fold using canonical Docker release guest native end parameters and the native-verified candidate recursion setup snapshots."
+  },
+  "final_default_host_source": "5a4928f651bb627ac5adf334fc6640bb6db5d79a",
+  "final_default_host_source_tree": "a6835b7eed85d9361c9e1aceb51a7988cbda09a8"
 }
