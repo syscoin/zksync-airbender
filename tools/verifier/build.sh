@@ -71,10 +71,17 @@ for artifact in "${artifact_names[@]}"; do
 done
 
 # 2) Build artifacts
+build_pids=()
 for artifact in "${artifact_names[@]}"; do
   features="$(detect_features "$artifact")"
   # Build in parallel.
   ( build_artifacts "$features" "$artifact" ) &
+  build_pids+=("$!")
 done
 
-wait
+# A bare wait reports success even when a background build failed.
+status=0
+for pid in "${build_pids[@]}"; do
+  wait "$pid" || status=1
+done
+exit "$status"
