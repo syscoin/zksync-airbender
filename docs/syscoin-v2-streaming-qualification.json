@@ -579,5 +579,66 @@
     "method": "Independent fold using canonical Docker release guest native end parameters and the native-verified candidate recursion setup snapshots."
   },
   "final_default_host_source": "5a4928f651bb627ac5adf334fc6640bb6db5d79a",
-  "final_default_host_source_tree": "a6835b7eed85d9361c9e1aceb51a7988cbda09a8"
+  "final_default_host_source_tree": "a6835b7eed85d9361c9e1aceb51a7988cbda09a8",
+  "maintained_differential_regression": {
+    "test": "tools/cli/tests/streaming_equivalence.rs",
+    "guide": "docs/streaming-verifier-regression.md",
+    "driver_source_sha256": "12e35b6b03655bab0984d5747d318c5027b6abf99e60de5e41de0429e960a9ae",
+    "linux_optimized_driver_sha256": "3cc356dc86ae8343b5ad1b7d6a97ffe10c3a04432ba6a3b7e1e94efc38390fc6",
+    "fixture_manifest_sha256": "124beeb55f9e7255bb26b6b311328bb56ed340223038acb0cddc374260bfd788",
+    "run_log_sha256": "8aff3004184c6018dddf607533b5cbe7b9a077f15ab22aa26c613a750e568057",
+    "default_guest_assets_revision": "5a4928f651bb627ac5adf334fc6640bb6db5d79a",
+    "streaming_guest_assets_revision": "a141a2990d1a8a7006d50b394e7c62398cf7fd2b",
+    "public_statement_hashes": [
+      {
+        "batch_id": 1,
+        "keccak256": "0xf24738326ca32c8347c6881f4a7507b45cd47e03abe907a1f121f5484c98a6fe"
+      },
+      {
+        "batch_id": 2,
+        "keccak256": "0xff1d448a4db7c0641de24cc41d790699500226a46210d85f82b4b5d8099fc076"
+      }
+    ],
+    "independent_eight_native_batch_manifest_sha256": "ad8e34b76c55db8a6d0e0f7801f94a899b77345a7ca6e4f0c6af61e7470e9449",
+    "cases": [
+      {
+        "artifact_targets": [
+          "Base"
+        ],
+        "batch_ids": [
+          1
+        ],
+        "complete_oracle_words": 1548360
+      },
+      {
+        "artifact_targets": [
+          "RecursionUnified"
+        ],
+        "batch_ids": [
+          1
+        ],
+        "complete_oracle_words": 555168
+      },
+      {
+        "artifact_targets": [
+          "RecursionUnified",
+          "RecursionUnified"
+        ],
+        "batch_ids": [
+          1,
+          2
+        ],
+        "complete_oracle_words": 1110338
+      }
+    ],
+    "complete_rv32_replays": 6,
+    "complete_replays_at_canonical_success_pc": 6,
+    "complete_replays_with_exact_oracle_consumption_and_all_16_expected_registers": 6,
+    "truncated_one_word_replays": 6,
+    "truncated_replays_rejected_at_input_eof_before_success_pc": 6,
+    "native_input_proofs_authenticated": true,
+    "combined_statement_matched_separate_keccak256_of_public_batch_statements": true,
+    "cargo_test_result": "passed",
+    "elapsed_seconds_including_preparation": 115.79
+  }
 }
