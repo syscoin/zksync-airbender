@@ -1,0 +1,301 @@
+{
+  "schema_version": 1,
+  "security": "Security100",
+  "input_gpu": "NVIDIA RTX 5090",
+  "guest_toolchain": "nightly-2026-08-09",
+  "guest_sha256": {
+    "bin": "0d69bb7bc5207041c737def52d8858bab261b2ccf0afadbf2ceed14aa86d7cf6",
+    "text": "9d999d91bc7422488c58cf6ca1f7f5041c2972065592ffe98bfcb8220ff0009a"
+  },
+  "default_source": "5cff603b014108adf172ad933add11edb5f54ffb",
+  "streaming_source": "728daed2c5701c31652691e9243e9baf55c40b72",
+  "proof_worker_source": "d8965007df1bd7f11a5279a10fe36bbfebaaac58",
+  "default_application_chain_words_hex": "05080df2ee1edeb1d3d13f9a193a00a3bf5ca2115bfa675b29c1baaef289d7e9",
+  "workloads": [
+    {
+      "workload": "verify batch 1 base proof in unrolled guest",
+      "inputs": [
+        {
+          "batch_id": 1,
+          "sha256": "f86b3f2090c31cfe550e3250f064d37f97c5eed42f38df5424ca639bd2df813a",
+          "size_bytes": 54555394
+        }
+      ],
+      "oracle_words_consumed": 1548360,
+      "oracle_bytes_consumed": 6193440,
+      "native_verified": true,
+      "all_six_rv32_runs_halted": true,
+      "all_six_rv32_runs_consumed_entire_oracle": true,
+      "default": {
+        "rv32_cycles": 32031187,
+        "cpu_vm_wall_ms": [
+          164,
+          140,
+          148
+        ],
+        "unique_guest_ram_words": 282607,
+        "distinct_guest_ram_bytes": 1130428,
+        "blake_delegations": 1051666,
+        "bigint_delegations": 0,
+        "keccak_delegations": 0
+      },
+      "streaming": {
+        "rv32_cycles": 32013920,
+        "cpu_vm_wall_ms": [
+          191,
+          169,
+          139
+        ],
+        "unique_guest_ram_words": 85666,
+        "distinct_guest_ram_bytes": 342664,
+        "blake_delegations": 1051666,
+        "bigint_delegations": 0,
+        "keccak_delegations": 0
+      },
+      "expected_native_and_rv32_registers": [
+        842549234,
+        2200740716,
+        529057351,
+        3020387658,
+        58643548,
+        2701650347,
+        1224024561,
+        4272330828,
+        3321753905,
+        1074002699,
+        501309629,
+        2995029355,
+        182897929,
+        3573169895,
+        1089809840,
+        1750180
+      ]
+    },
+    {
+      "workload": "verify batch 1 recursion-unified proof in unified guest",
+      "inputs": [
+        {
+          "batch_id": 1,
+          "sha256": "3dcf48bcbc95ec33c6cf9da2fbbf7a0e6408d5a27e3a2bbd50858cb340a514f5",
+          "size_bytes": 18958006
+        }
+      ],
+      "oracle_words_consumed": 555168,
+      "oracle_bytes_consumed": 2220672,
+      "native_verified": true,
+      "all_six_rv32_runs_halted": true,
+      "all_six_rv32_runs_consumed_entire_oracle": true,
+      "default": {
+        "rv32_cycles": 11957098,
+        "cpu_vm_wall_ms": [
+          78,
+          74,
+          75
+        ],
+        "unique_guest_ram_words": 246961,
+        "distinct_guest_ram_bytes": 987844,
+        "blake_delegations": 348824,
+        "bigint_delegations": 0,
+        "keccak_delegations": 0
+      },
+      "streaming": {
+        "rv32_cycles": 11942196,
+        "cpu_vm_wall_ms": [
+          107,
+          82,
+          72
+        ],
+        "unique_guest_ram_words": 51488,
+        "distinct_guest_ram_bytes": 205952,
+        "blake_delegations": 348824,
+        "bigint_delegations": 0,
+        "keccak_delegations": 0
+      },
+      "expected_native_and_rv32_registers": [
+        842549234,
+        2200740716,
+        529057351,
+        3020387658,
+        58643548,
+        2701650347,
+        1224024561,
+        4272330828,
+        84413938,
+        3995000497,
+        3553705882,
+        423231651,
+        3210519057,
+        1543137115,
+        700562094,
+        4069119977
+      ]
+    },
+    {
+      "workload": "combine recursion-unified proofs for batches 1 and 2",
+      "inputs": [
+        {
+          "batch_id": 1,
+          "sha256": "3dcf48bcbc95ec33c6cf9da2fbbf7a0e6408d5a27e3a2bbd50858cb340a514f5",
+          "size_bytes": 18958006
+        },
+        {
+          "batch_id": 2,
+          "sha256": "5f739504dc102910127dcdd842377586f00f9fbed96679107db1c8ef48b4aad8",
+          "size_bytes": 18956511
+        }
+      ],
+      "oracle_words_consumed": 1110338,
+      "oracle_bytes_consumed": 4441352,
+      "native_verified": true,
+      "all_six_rv32_runs_halted": true,
+      "all_six_rv32_runs_consumed_entire_oracle": true,
+      "default": {
+        "rv32_cycles": 23917963,
+        "cpu_vm_wall_ms": [
+          170,
+          163,
+          165
+        ],
+        "unique_guest_ram_words": 247143,
+        "distinct_guest_ram_bytes": 988572,
+        "blake_delegations": 697648,
+        "bigint_delegations": 0,
+        "keccak_delegations": 0
+      },
+      "streaming": {
+        "rv32_cycles": 23888159,
+        "cpu_vm_wall_ms": [
+          167,
+          163,
+          157
+        ],
+        "unique_guest_ram_words": 51670,
+        "distinct_guest_ram_bytes": 206680,
+        "blake_delegations": 697648,
+        "bigint_delegations": 0,
+        "keccak_delegations": 0
+      },
+      "expected_native_and_rv32_registers": [
+        2272586713,
+        965794190,
+        2453734585,
+        2305337070,
+        2311361161,
+        2939289603,
+        932387791,
+        3071633107,
+        84413938,
+        3995000497,
+        3553705882,
+        423231651,
+        3210519057,
+        1543137115,
+        700562094,
+        4069119977
+      ]
+    }
+  ],
+  "rv32_image_sha256": {
+    "default": {
+      "unrolled": {
+        "bin": "1e34e53a71d073d8b273fa8114dc6faaeaf9a76c2aec06643563a69cc7dd8a43",
+        "text": "4e68c57b18d194b5fdedf3ae2d1d2dab6f3da47160c964f02e9793077dd66ed8"
+      },
+      "unified": {
+        "bin": "03cc1cb4bfd70fe55cb1014bfcb6a7e587c154f7144477c801a99f4466f09c2e",
+        "text": "c9ef9dd7c618f0e4e24e39be5d888440029b0985214eb47ed569a6c21c6366cd"
+      }
+    },
+    "streaming": {
+      "unrolled": {
+        "bin": "3b56d1e96977684d5b4d7479b8639a5a12a11350f8e2f17ad1ab45b8160bb9e2",
+        "text": "a06c2324c844a5320a43d524ddfb1d17a5aeb205a01b0436213bc0bd52141679"
+      },
+      "unified": {
+        "bin": "2af8cfc345b6454ed643ed1f5a1b82d9bb515e25a6f5f13555d36ee84bab52aa",
+        "text": "4d5a22015f22e6a2d3cc5d4c03650188d480c403d05db1160e144769e928ed70"
+      }
+    }
+  },
+  "maximum_emitted_function_frame_bytes": {
+    "unrolled": {
+      "default": 895104,
+      "streaming": 98368
+    },
+    "unified": {
+      "default": 895104,
+      "streaming": 96896
+    }
+  },
+  "measurement_notes": [
+    "Wall times include RV32 interpretation only, in alternating A/B order on a shared host.",
+    "Each run checked GPU-reported application Keccaks, the authenticated chain and all 16 output registers.",
+    "RAM counts come from the VM initialization and teardown collector after running identical authenticated oracle data.",
+    "These measurements do not measure GPU peak VRAM, peak process RSS or full proof latency.",
+    "The replay inputs authenticate default-candidate proof files. The streaming application commitment is separate. A streaming GPU proving run uses its own recursive guest setup and commitment."
+  ],
+  "streaming_application_chain_words_hex": "69ba06c1a7ca60828dcb2d6ef3d56805d69660c6219694340a6f3b91ffbb809f",
+  "streaming_candidate_setup_and_chain": {
+    "app_end_params": [
+      3009942935,
+      2266051515,
+      747570558,
+      2762947172,
+      1354863053,
+      3205993576,
+      4096623771,
+      3765215681
+    ],
+    "base_chain": [
+      3321753905,
+      1074002699,
+      501309629,
+      2995029355,
+      182897929,
+      3573169895,
+      1089809840,
+      1750180
+    ],
+    "unrolled_setup_end_params": [
+      1246811872,
+      763567903,
+      2321549897,
+      1008692255,
+      435509740,
+      646282816,
+      1489050924,
+      150434736
+    ],
+    "unrolled_chain": [
+      1554959760,
+      2309876623,
+      1413637216,
+      3997791557,
+      2236931166,
+      1372547012,
+      1202324866,
+      682715782
+    ],
+    "unified_setup_end_params": [
+      1854488687,
+      1121870043,
+      3225776498,
+      557394479,
+      1984347491,
+      2270075173,
+      3179146934,
+      823528011
+    ],
+    "unified_chain": [
+      1773799105,
+      2815058050,
+      2378902894,
+      4090849285,
+      3600179398,
+      563516468,
+      175061905,
+      4290478239
+    ],
+    "unified_chain_words_hex": "69ba06c1a7ca60828dcb2d6ef3d56805d69660c6219694340a6f3b91ffbb809f"
+  }
+}
