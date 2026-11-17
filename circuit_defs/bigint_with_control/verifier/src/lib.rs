@@ -134,15 +134,6 @@ pub unsafe fn verify_with_configuration<
     // SAFETY: fill writes every non-padding word. The explicit padding is MaybeUninit<u32>.
     let skeleton = skeleton.assume_init_ref();
 
-    let mut queries = MaybeUninit::<[QueryValuesInstance<S>; Geometry::<S>::NUM_QUERIES]>::uninit();
-    <QueryValuesInstance<S> as QueryValuesInstanceExt<S>>::fill_array::<
-        I,
-        V,
-        { Geometry::<S>::NUM_QUERIES },
-    >(queries.as_mut_ptr(), skeleton, &mut leaf_inclusion_verifier);
-    // SAFETY: fill_array returned after filling every query index and all its leaf words.
-    let queries = queries.assume_init_ref();
-
     // now drive the transcript and continue
     let mut transcript_hasher = blake2s_u32::DelegatedBlake2sState::new();
     let mut seed = Blake2sTranscript::commit_initial_using_hasher(
@@ -463,7 +454,6 @@ pub unsafe fn verify_with_configuration<
     Transcript::draw_randomness_using_hasher(&mut transcript_hasher, &mut seed, &mut indexes_bits);
 
     // NOTE: when we will use queries below, we MUST check that query set's index is exactly the index we draw from transcript.
-    // Indexes in `queries` are already checked to be included in merkle tree caps declared in `skeleton`
 
     // And NOW we can check algebraic properties of the proof:
     // - quotient evaluation at z
@@ -783,8 +773,17 @@ pub unsafe fn verify_with_configuration<
         // NOTE: here we skip 1 word because PoW is checked over it
         let mut bit_iterator = BitSource::new(&indexes_bits[1..]);
         let mut inversion_buffer = [Mersenne31Quartic::ZERO; 2];
-        for query_round in 0..Geometry::<S>::NUM_QUERIES {
-            let query = &queries[query_round];
+        // The transcript only depends on the skeleton. Consume each authenticated query in
+        // wire order and reuse its storage once its FRI checks have completed.
+        let mut query_storage = MaybeUninit::<QueryValuesInstance<S>>::uninit();
+        for _ in 0..Geometry::<S>::NUM_QUERIES {
+            <QueryValuesInstance<S> as QueryValuesInstanceExt<S>>::fill::<I, V>(
+                query_storage.as_mut_ptr(),
+                skeleton,
+                &mut leaf_inclusion_verifier,
+            );
+            // SAFETY: fill wrote the index and all leaf words and checked their Merkle paths.
+            let query = query_storage.assume_init_ref();
             let query_index: u32 =
                 assemble_query_index(BITS_FOR_QUERY_INDEX, &mut bit_iterator) as u32;
 
