@@ -2527,6 +2527,28 @@
     {
       "quadratic_terms": [
         [
+          2147483646,
+          {
+            "MemorySubtree": 27
+          },
+          {
+            "MemorySubtree": 30
+          }
+        ]
+      ],
+      "linear_terms": [
+        [
+          1,
+          {
+            "MemorySubtree": 27
+          }
+        ]
+      ],
+      "constant_term": 0
+    },
+    {
+      "quadratic_terms": [
+        [
           1,
           {
             "MemorySubtree": 9
