@@ -108,7 +108,7 @@ impl StageFourOutput {
             vectorized_ldes.push(context.alloc(4 * trace_len, AllocationPlacement::BestFit)?);
         }
         let stream = context.get_exec_stream();
-        let mut quotient_z_pow_challenge = unsafe { context.alloc_host_uninit::<u64>() };
+        let mut quotient_z_pow_challenge = context.alloc_host(0u64);
         let quotient_z_pow_bits = security_config.quotient_z_pow_bits;
         search_pow_challenge(
             seed,
@@ -120,9 +120,9 @@ impl StageFourOutput {
             callbacks,
             context,
         )?;
-        let mut values_at_z = unsafe { context.alloc_host_uninit_slice(num_evals) };
+        let mut values_at_z = context.alloc_host_slice(num_evals);
         let values_at_z_accessor = values_at_z.get_mut_accessor();
-        let mut h_z = unsafe { context.alloc_host_uninit::<E4>() };
+        let mut h_z = context.alloc_host(E4::default());
         let h_z_accessor = h_z.get_mut_accessor();
         let get_z = move || unsafe {
             let num_entries = (if quotient_z_pow_bits == 0 { 0usize } else { 1 } + 1 * 4)
@@ -231,7 +231,7 @@ impl StageFourOutput {
             Transcript::commit_with_seed(seed_accessor.get_mut(), &transcript_input);
         };
         callbacks.schedule(commit_values_at_z, stream)?;
-        let mut deep_poly_alpha_pow_challenge = unsafe { context.alloc_host_uninit::<u64>() };
+        let mut deep_poly_alpha_pow_challenge = context.alloc_host(0u64);
         let deep_poly_alpha_pow_bits = security_config.deep_poly_alpha_pow_bits;
         search_pow_challenge(
             seed,
@@ -249,9 +249,9 @@ impl StageFourOutput {
         let num_terms_at_z_omega = circuit.num_openings_at_z_omega();
         let num_terms_total = num_terms_at_z + num_terms_at_z_omega;
         let mut challenge_host_buffers = ChallengeHostBuffers {
-            challenges: unsafe { context.alloc_host_uninit::<[E4; 2]>() },
-            scratch: unsafe { context.alloc_host_uninit_slice(num_terms_total) },
-            sums: unsafe { context.alloc_host_uninit::<ChallengesTimesEvalsSums>() },
+            challenges: context.alloc_host(<[E4; 2]>::default()),
+            scratch: context.alloc_host_slice(num_terms_total),
+            sums: context.alloc_host(ChallengesTimesEvalsSums::default()),
             stream,
             uploads_pending: true,
         };

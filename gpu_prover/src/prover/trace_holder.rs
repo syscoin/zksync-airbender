@@ -354,13 +354,13 @@ impl TraceHolder<BF> {
                 gather_merkle_paths(indexes, &tree, &mut d_merkle_paths, layers_count, stream)?;
             }
         };
-        let mut leafs = unsafe { context.alloc_host_uninit_slice(leafs_len) };
+        let mut leafs = context.alloc_host_slice(leafs_len);
         memory_copy_async(
             unsafe { leafs.get_mut_accessor().get_mut() },
             &d_leafs,
             stream,
         )?;
-        let mut merkle_paths = unsafe { context.alloc_host_uninit_slice(digests_len) };
+        let mut merkle_paths = context.alloc_host_slice(digests_len);
         memory_copy_async(
             unsafe { merkle_paths.get_mut_accessor().get_mut() },
             &d_merkle_paths,
@@ -834,7 +834,7 @@ pub(crate) fn allocate_tree_caps(
     let coset_tree_cap_size = 1 << log_coset_tree_cap_size;
     let mut result = Vec::with_capacity(lde_factor);
     for _ in 0..lde_factor {
-        let tree_cap = unsafe { context.alloc_host_uninit_slice(coset_tree_cap_size) };
+        let tree_cap = context.alloc_host_slice(coset_tree_cap_size);
         result.push(tree_cap);
     }
     result

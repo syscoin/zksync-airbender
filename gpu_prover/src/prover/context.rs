@@ -263,15 +263,15 @@ impl ProverContext {
         result
     }
 
-    pub(crate) unsafe fn alloc_host_uninit<T: Sized>(&self) -> HostAllocation<T> {
-        HostAllocation::new_uninit(self)
+    pub(crate) fn alloc_host<T>(&self, value: T) -> HostAllocation<T> {
+        HostAllocation(Box::new_in(value, self.get_host_allocator()))
     }
 
-    pub(crate) unsafe fn alloc_host_uninit_slice<T: Sized>(
-        &self,
-        len: usize,
-    ) -> HostAllocation<[T]> {
-        HostAllocation::new_uninit_slice(len, self)
+    pub(crate) fn alloc_host_slice<T: Default>(&self, len: usize) -> HostAllocation<[T]> {
+        let mut buffer = Vec::with_capacity_in(len, self.get_host_allocator());
+        // CUDA copy APIs borrow typed slices even when filling them from the device.
+        buffer.resize_with(len, T::default);
+        HostAllocation(buffer.into_boxed_slice())
     }
 
     pub fn get_mem_size(&self) -> usize {
@@ -409,25 +409,12 @@ mod tests {
 pub(crate) struct HostAllocation<T: ?Sized>(Box<T, HostAllocator>);
 
 impl<T: ?Sized> HostAllocation<T> {
-    unsafe fn new_uninit(context: &ProverContext) -> Self
-    where
-        T: Sized,
-    {
-        Self(Box::new_uninit_in(context.get_host_allocator()).assume_init())
-    }
-
     pub fn get_accessor(&self) -> UnsafeAccessor<T> {
         UnsafeAccessor::new(&self.0)
     }
 
     pub fn get_mut_accessor(&mut self) -> UnsafeMutAccessor<T> {
         UnsafeMutAccessor::new(&mut self.0)
-    }
-}
-
-impl<T> HostAllocation<[T]> {
-    unsafe fn new_uninit_slice(len: usize, context: &ProverContext) -> Self {
-        Self(Box::new_uninit_slice_in(len, context.get_host_allocator()).assume_init())
     }
 }
 

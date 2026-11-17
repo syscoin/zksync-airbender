@@ -155,7 +155,9 @@ impl LockedBoxedTraceChunk {
         let allocation =
             HostAllocation::alloc(Self::pinned_bytes(), CudaHostAllocFlags::DEFAULT).unwrap();
         let allocator = A::new(vec![allocation], Self::LOG_CHUNK_SIZE);
-        let chunk = unsafe { Box::<TraceChunk, _>::new_uninit_in(allocator).assume_init() };
+        // SAFETY: TraceChunk contains only integer arrays and an integer length. Initialize the
+        // pinned allocation in place so its size never becomes a temporary stack frame.
+        let chunk = unsafe { Box::<TraceChunk, _>::new_zeroed_in(allocator).assume_init() };
         Self { chunk }
     }
 

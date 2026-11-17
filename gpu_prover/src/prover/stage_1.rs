@@ -442,7 +442,7 @@ impl StageOneOutput {
             return Ok(());
         }
         if circuit.public_inputs.is_empty() {
-            self.public_inputs = Some(unsafe { context.alloc_host_uninit_slice(0) });
+            self.public_inputs = Some(context.alloc_host_slice(0));
             return Ok(());
         }
         let holder = &mut self.witness_holder;
@@ -452,10 +452,9 @@ impl StageOneOutput {
         let mut d_witness_first_row = context.alloc(columns_count, AllocationPlacement::BestFit)?;
         let mut d_witness_one_before_last_row =
             context.alloc(columns_count, AllocationPlacement::BestFit)?;
-        let mut h_witness_first_row = unsafe { context.alloc_host_uninit_slice(columns_count) };
+        let mut h_witness_first_row = context.alloc_host_slice(columns_count);
         let h_witness_first_row_accessor = h_witness_first_row.get_mut_accessor();
-        let mut h_witness_one_before_last_row =
-            unsafe { context.alloc_host_uninit_slice(columns_count) };
+        let mut h_witness_one_before_last_row = context.alloc_host_slice(columns_count);
         let h_witness_one_before_last_row_accessor =
             h_witness_one_before_last_row.get_mut_accessor();
         let evaluations = holder.get_evaluations(context)?;
@@ -481,8 +480,7 @@ impl StageOneOutput {
             &d_witness_one_before_last_row,
             stream,
         )?;
-        let mut public_inputs =
-            unsafe { context.alloc_host_uninit_slice(circuit.public_inputs.len()) };
+        let mut public_inputs = context.alloc_host_slice(circuit.public_inputs.len());
         let unsafe_public_inputs = public_inputs.get_mut_accessor();
         let circuit_clone = circuit.clone();
         let function = move || unsafe {

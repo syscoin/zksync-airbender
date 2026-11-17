@@ -75,7 +75,7 @@ impl StageFiveOutput {
             domain_generator_for_size::<E2>(1u64 << (log_domain_size + log_lde_factor));
         let taus_clone =
             materialize_powers_serial_starting_with_one::<E2, Global>(coset_generator, lde_factor);
-        let mut taus = unsafe { context.alloc_host_uninit_slice(taus_clone.len()) };
+        let mut taus = context.alloc_host_slice(taus_clone.len());
         let taus_accessor = taus.get_mut_accessor();
         let set_taus_fn = move || unsafe {
             taus_accessor.get_mut().copy_from_slice(&taus_clone);
@@ -104,7 +104,7 @@ impl StageFiveOutput {
             } else {
                 &fri_oracles[i - 1].ldes
             };
-            let mut pow_challenge = unsafe { context.alloc_host_uninit::<u64>() };
+            let mut pow_challenge = context.alloc_host(0u64);
             let pow_bits = security_config.foldings_pow_bits[i];
             search_pow_challenge(
                 seed,
@@ -118,7 +118,7 @@ impl StageFiveOutput {
             )?;
             pow_challenges.push(pow_challenge);
             let challenges_len = lde_factor * current_log_fold;
-            let mut h_challenges = unsafe { context.alloc_host_uninit_slice(challenges_len) };
+            let mut h_challenges = context.alloc_host_slice(challenges_len);
             let h_challenges_accessor = h_challenges.get_mut_accessor();
             let set_folding_challenges_fn = move || unsafe {
                 let has_pow = pow_bits != 0;
@@ -164,7 +164,7 @@ impl StageFiveOutput {
                 let mut leaf_values = vec![];
                 for d_coset in ldes.iter() {
                     let len = d_coset.len();
-                    let mut h_coset = unsafe { context.alloc_host_uninit_slice(len) };
+                    let mut h_coset = context.alloc_host_slice(len);
                     memory_copy_async(
                         unsafe { h_coset.get_mut_accessor().get_mut() },
                         d_coset,
@@ -246,7 +246,7 @@ impl StageFiveOutput {
                 + folding_description.folding_sequence.last().unwrap()
         );
         let final_monomials = {
-            let mut pow_challenge = unsafe { context.alloc_host_uninit::<u64>() };
+            let mut pow_challenge = context.alloc_host(0u64);
             let pow_bits = security_config.foldings_pow_bits[oracles_count];
             search_pow_challenge(
                 seed,
@@ -261,7 +261,7 @@ impl StageFiveOutput {
             pow_challenges.push(pow_challenge);
             let log_folding_degree = *folding_description.folding_sequence.last().unwrap() as u32;
             let challenges_len = log_folding_degree as usize;
-            let mut h_challenges = unsafe { context.alloc_host_uninit_slice(challenges_len) };
+            let mut h_challenges = context.alloc_host_slice(challenges_len);
             let h_challenges_accessor = h_challenges.get_mut_accessor();
             let set_folding_challenges_fn = move || unsafe {
                 let has_pow = pow_bits != 0;
@@ -291,8 +291,7 @@ impl StageFiveOutput {
                 &mut d_folded_domain,
                 context,
             )?;
-            let mut h_folded_domain =
-                unsafe { context.alloc_host_uninit_slice(folded_domain_size) };
+            let mut h_folded_domain = context.alloc_host_slice(folded_domain_size);
             let h_folded_domain_accessor = h_folded_domain.get_mut_accessor();
             memory_copy_async(
                 unsafe { h_folded_domain_accessor.get_mut() },
@@ -301,7 +300,7 @@ impl StageFiveOutput {
             )?;
             log_current_domain_size -= log_folding_degree;
             let domain_size = 1 << log_current_domain_size;
-            let mut monomials = unsafe { context.alloc_host_uninit_slice(domain_size) };
+            let mut monomials = context.alloc_host_slice(domain_size);
             let monomials_accessor = monomials.get_mut_accessor();
             let monomials_fn = move || unsafe {
                 let h_folded_domain = h_folded_domain_accessor.get();

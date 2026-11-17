@@ -94,12 +94,11 @@ impl StageTwoOutput {
         let log_domain_size = trace_len.trailing_zeros();
         let layout = circuit.stage_2_layout;
         let num_stage_2_cols = layout.total_width;
-        let mut lookup_challenges = unsafe { context.alloc_host_uninit::<LookupChallenges>() };
-        let mut decoder_challenges =
-            unsafe { context.alloc_host_uninit::<DecoderTableChallenges>() };
+        let mut lookup_challenges = context.alloc_host(LookupChallenges::default());
+        let mut decoder_challenges = context.alloc_host(DecoderTableChallenges::default());
         let stream = context.get_exec_stream();
         let seed_accessor = seed.get_mut_accessor();
-        let mut pow_challenge = unsafe { context.alloc_host_uninit::<u64>() };
+        let mut pow_challenge = context.alloc_host(0u64);
         let pow_bits = security_config.lookup_pow_bits;
         search_pow_challenge(
             seed,
@@ -280,7 +279,7 @@ impl StageTwoOutput {
         let last_row_src = DeviceMatrixChunk::new(&evaluations, trace_len, trace_len - 1, 1);
         let mut las_row_dst = DeviceMatrixMut::new(&mut d_last_row, 1);
         set_by_ref(&last_row_src, &mut las_row_dst, stream)?;
-        let mut last_row = unsafe { context.alloc_host_uninit_slice(num_stage_2_cols) };
+        let mut last_row = context.alloc_host_slice(num_stage_2_cols);
         let last_row_accessor = last_row.get_mut_accessor();
         memory_copy_async(unsafe { last_row_accessor.get_mut() }, &d_last_row, stream)?;
         self.last_row = Some(last_row);
