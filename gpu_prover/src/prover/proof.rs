@@ -1,5 +1,5 @@
 use super::callbacks::Callbacks;
-use super::context::{HostAllocation, ProverContext, UnsafeMutAccessor};
+use super::context::{HostAllocation, ProverContext};
 use super::memory_policy::MemoryPolicy;
 use super::pow::search_pow_challenge;
 use super::queries::QueriesOutput;
@@ -29,12 +29,12 @@ use prover::prover_stages::cached_data::ProverCachedData;
 use prover::prover_stages::unrolled_prover::UnrolledModeProof;
 use prover::prover_stages::{ProofPowChallenges, ProofSecurityConfig};
 use prover::transcript::Seed;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 pub struct ProofJob<'a> {
     is_finished_event: CudaEvent,
     callbacks: Callbacks<'a>,
-    proof: Box<Option<UnrolledModeProof>>,
+    proof: Arc<Mutex<Option<UnrolledModeProof>>>,
     ranges: Vec<device_tracing::Range<'a>>,
 }
 
@@ -47,12 +47,16 @@ impl<'a> ProofJob<'a> {
         let Self {
             is_finished_event,
             callbacks,
-            mut proof,
+            proof,
             ranges,
         } = self;
         is_finished_event.synchronize()?;
         drop(callbacks);
-        let proof = proof.take().unwrap();
+        let proof = proof
+            .lock()
+            .unwrap()
+            .take()
+            .expect("proof callback completed");
         #[cfg(feature = "log_gpu_stages_timings")]
         {
             log::debug!("GPU setup time: {:.3} ms", ranges[0].elapsed()?);
@@ -468,7 +472,7 @@ fn create_proof(
     queries_output: QueriesOutput,
     callbacks: &mut Callbacks,
     context: &ProverContext,
-) -> CudaResult<Box<Option<UnrolledModeProof>>> {
+) -> CudaResult<Arc<Mutex<Option<UnrolledModeProof>>>> {
     let public_inputs = stage_1_output.public_inputs.unwrap().get_accessor();
     let witness_tree_caps = stage_1_output.witness_holder.get_tree_caps_accessors();
     let memory_tree_caps = stage_1_output.memory_holder.get_tree_caps_accessors();
@@ -504,8 +508,9 @@ fn create_proof(
         .collect_vec();
     let queries = queries_output.get_accessors();
     let fri_queries_pow_challenge = fri_queries_pow_challenge.get_accessor();
-    let mut proof = Box::new(Option::<UnrolledModeProof>::None);
-    let proof_accessor = UnsafeMutAccessor::new(proof.as_mut());
+    let proof = Arc::new(Mutex::new(None));
+    // A callback that has already started can finish after its job handle is dropped.
+    let result_slot = Arc::clone(&proof);
     let create_proof_fn = move || unsafe {
         let public_inputs = public_inputs.get().to_vec();
         let witness_tree_caps = get_tree_caps(&witness_tree_caps);
@@ -563,7 +568,7 @@ fn create_proof(
             delegation_type,
             aux_boundary_values: aux_boundary_values.clone(),
         };
-        proof_accessor.set(Some(proof));
+        assert!(result_slot.lock().unwrap().replace(proof).is_none());
     };
     callbacks.schedule(create_proof_fn, context.get_exec_stream())?;
     Ok(proof)
