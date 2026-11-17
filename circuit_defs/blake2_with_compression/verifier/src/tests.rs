@@ -67,14 +67,13 @@ fn test_unified_cycle_or_delegation() {
 
             set_iterator(it);
 
-            #[allow(invalid_value)]
             unsafe {
                 verify_with_configuration::<
                     TestSecurity,
                     ThreadLocalBasedSource,
                     DefaultLeafInclusionVerifier,
                 >(
-                    &mut MaybeUninit::uninit().assume_init(),
+                    &mut ProofOutput::empty(),
                     &mut ProofPublicInputs::uninit(),
                 )
             };
@@ -131,14 +130,13 @@ fn test_unrolled_circuit() {
 
             set_iterator(it);
 
-            #[allow(invalid_value)]
             unsafe {
                 verify_with_configuration::<
                     TestSecurity,
                     ThreadLocalBasedSource,
                     DefaultLeafInclusionVerifier,
                 >(
-                    &mut MaybeUninit::uninit().assume_init(),
+                    &mut ProofOutput::empty(),
                     &mut ProofPublicInputs::uninit(),
                 )
             };
