@@ -640,5 +640,67 @@
     "combined_statement_matched_separate_keccak256_of_public_batch_statements": true,
     "cargo_test_result": "passed",
     "elapsed_seconds_including_preparation": 115.79
+  },
+  "controlled_gpu_comparison": {
+    "hardware": "NVIDIA GeForce RTX 5090, same physical device for all four arms",
+    "profile": "Security100",
+    "default_runtime_revision": "d8965007df1bd7f11a5279a10fe36bbfebaaac58",
+    "streaming_runtime_revision": "a141a2990d1a8a7006d50b394e7c62398cf7fd2b",
+    "input_guest_bin_sha256": "0d69bb7bc5207041c737def52d8858bab261b2ccf0afadbf2ceed14aa86d7cf6",
+    "range_verified_public_input_hash": "0xd9eb74878ed99039b9044192eea668898992c489030032afcf1b9337d36615b7",
+    "workload": "Generate complete recursion-unified leaves for two retained v32 batches, combine both leaves and verify the resulting range under the corresponding arm commitment.",
+    "sampling_order": [
+      "default-a",
+      "streaming-a",
+      "streaming-b",
+      "default-b"
+    ],
+    "runs": [
+      {
+        "arm": "default-a",
+        "leaf_proving_ms": [
+          7240,
+          4770
+        ],
+        "merge_and_shrink_ms": 1850
+      },
+      {
+        "arm": "streaming-a",
+        "leaf_proving_ms": [
+          7213,
+          4787
+        ],
+        "merge_and_shrink_ms": 1855
+      },
+      {
+        "arm": "streaming-b",
+        "leaf_proving_ms": [
+          7199,
+          4844
+        ],
+        "merge_and_shrink_ms": 1863
+      },
+      {
+        "arm": "default-b",
+        "leaf_proving_ms": [
+          7220,
+          4837
+        ],
+        "merge_and_shrink_ms": 1800
+      }
+    ],
+    "largest_observed_live_fri_device_allocation_gib_each_arm": 27.0546875,
+    "largest_observed_live_merge_device_allocation_gib_each_arm": 20.6171875,
+    "raw_receipts": [
+      {
+        "file": "syscoin-v2-streaming-gpu-measurements.json",
+        "sha256": "9260a55160f2e3b57b4bdfe71ba7d0ec1e701eaa4617c52b422193ff3f99bceb"
+      },
+      {
+        "file": "syscoin-v2-streaming-gpu-phase-memory.json",
+        "sha256": "0991dd23605f0acc81b9b05d8891aee3105697d40a75eee3ed8ae91817a36f49"
+      }
+    ],
+    "interpretation": "The smaller RV32 guest RAM footprint did not produce a meaningful end-to-end proving-time or live allocation reduction in these two-batch GPU runs. Both implementations allocated the same number of Airbender proof chunks. The experiment remains separate from the production candidate."
   }
 }
