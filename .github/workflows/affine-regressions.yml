@@ -34,4 +34,4 @@ jobs:
           }
           check_tests 5 -p field --test deep_affine_degree
           check_tests 3 -p verifier_common --test v32_affine_terminal
-          check_tests 1 -p blake2_with_compression_verifier --lib tests::verify_honest_security100_delegation -- --exact
+          check_tests 1 -p full_statement_verifier --no-default-features --features unified_verifier_only_security_100,replace_csr --test security100_delegation verify_honest_security100_delegation -- --exact

@@ -179,22 +179,3 @@ fn test_query_values_offsets() {
     assert_offsets::<verifier_common::security_80::Security80Marker>();
     assert_offsets::<verifier_common::security_100::Security100Marker>();
 }
-
-#[test]
-fn verify_honest_security100_delegation() {
-    let oracle = include_bytes!("../fixtures/security100-blake2s-delegation.bin");
-    let (words, remainder) = oracle.as_chunks::<4>();
-    assert!(remainder.is_empty());
-
-    std::thread::Builder::new()
-        .stack_size(1 << 27)
-        .spawn(move || {
-            set_iterator(words.iter().copied().map(u32::from_le_bytes));
-            // The oracle contains a complete proof for this concrete verifier and security level.
-            unsafe { verify_100(&mut ProofOutput::empty(), &mut ProofPublicInputs::uninit()) };
-            assert!(try_read_word().is_none());
-        })
-        .unwrap()
-        .join()
-        .unwrap();
-}
