@@ -328,15 +328,62 @@ pub(super) fn get_inits_and_teardowns_chunks(
             let capacity = allocator.capacity() / size_of::<LazyInitAndTeardown>();
             let count = min(capacity, values_count);
             let mut chunk = Vec::with_capacity_in(count, allocator);
-            unsafe {
-                chunk.set_len(count);
-                for i in 0..count {
-                    *chunk.get_unchecked_mut(i) = iterator.next().unwrap_unchecked();
-                }
-            };
+            for _ in 0..count {
+                chunk.push(
+                    iterator
+                        .next()
+                        .expect("counted RAM init and teardown values"),
+                );
+            }
             chunks.push(Arc::new(chunk));
             values_count -= count;
         }
         ShuffleRamInitsAndTeardownsHost { chunks }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use era_cudart::memory::{CudaHostAllocFlags, HostAllocation};
+
+    #[test]
+    fn teardown_chunks_preserve_order_across_partitions_and_allocators() {
+        let log_chunk_size = 12;
+        let allocation_bytes = 1usize << log_chunk_size;
+        let chunk_capacity = allocation_bytes / size_of::<LazyInitAndTeardown>();
+        let expected: Vec<_> = (0..(2 * chunk_capacity + 1))
+            .map(|index| LazyInitAndTeardown {
+                address: (4 * index) as u32,
+                teardown_value: (index + 7) as u32,
+                teardown_timestamp: TimestampData::from_scalar((index + 1) as u64),
+            })
+            .collect();
+        let (sender, receiver) = crossbeam_channel::bounded(3);
+        for _ in 0..3 {
+            let allocation =
+                HostAllocation::alloc(allocation_bytes, CudaHostAllocFlags::PORTABLE).unwrap();
+            sender.send(A::new([allocation], log_chunk_size)).unwrap();
+        }
+        drop(sender);
+
+        let chunks: Vec<_> = get_inits_and_teardowns_chunks(
+            vec![expected[..1].to_vec(), expected[1..].to_vec()],
+            chunk_capacity + 1,
+            receiver,
+        )
+        .collect();
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].chunks.len(), 1);
+        assert_eq!(chunks[1].chunks.len(), 2);
+        assert_eq!(chunks[0].chunks[0].as_slice(), &expected[..chunk_capacity]);
+        assert_eq!(
+            chunks[1].chunks[0].as_slice(),
+            &expected[chunk_capacity..2 * chunk_capacity]
+        );
+        assert_eq!(
+            chunks[1].chunks[1].as_slice(),
+            &expected[2 * chunk_capacity..]
+        );
+    }
 }
