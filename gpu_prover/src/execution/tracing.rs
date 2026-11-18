@@ -131,7 +131,7 @@ impl<T: Copy + 'static> TracerRanges<T> {
 
     #[inline(always)]
     unsafe fn write_type_unchecked<U: Copy + 'static>(&mut self, value: U) {
-        debug_assert_eq!(any::TypeId::of::<T>(), any::TypeId::of::<U>());
+        assert_eq!(any::TypeId::of::<T>(), any::TypeId::of::<U>());
         if core::hint::unlikely(self.current.start == self.current.end) {
             self.current = self
                 .queue

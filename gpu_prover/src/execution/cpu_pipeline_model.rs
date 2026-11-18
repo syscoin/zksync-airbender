@@ -511,9 +511,13 @@ fn run_simulator_for_model<T: TracingType + 'static>(
         )
     };
     let circuit_type = CircuitType::Unrolled(circuit_type);
-    for (sequence_id, inits_and_teardowns_data) in
-        get_inits_and_teardowns_chunks(inits_and_teardowns, per_circuit_count, free_allocators)
-            .enumerate()
+    for (sequence_id, inits_and_teardowns_data) in get_inits_and_teardowns_chunks(
+        inits_and_teardowns,
+        per_circuit_count,
+        free_allocators,
+        A::capacity,
+    )
+    .enumerate()
     {
         let data = InitsAndTeardownsData {
             circuit_type,

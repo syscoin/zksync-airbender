@@ -3,7 +3,6 @@
 #![feature(btree_cursors)]
 #![feature(extend_one_unchecked)]
 #![feature(generic_const_exprs)]
-#![feature(get_mut_unchecked)]
 #![feature(iter_advance_by)]
 #![feature(iter_array_chunks)]
 #![feature(likely_unlikely)]

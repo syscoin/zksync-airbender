@@ -11,6 +11,7 @@ use crate::machine_type::MachineType;
 use crate::witness::trace_unrolled::ShuffleRamInitsAndTeardownsHost;
 use crossbeam_channel::{Receiver, Sender};
 use cs::definitions::TimestampData;
+use fft::GoodAllocator;
 use itertools::Itertools;
 use log::{debug, trace};
 use prover::common_constants;
@@ -131,9 +132,13 @@ pub(crate) fn run_simulator<
             )
         };
         let circuit_type = CircuitType::Unrolled(circuit_type);
-        for (sequence_id, inits_and_teardowns_data) in
-            get_inits_and_teardowns_chunks(inits_and_teardowns, per_circuit_count, free_allocators)
-                .enumerate()
+        for (sequence_id, inits_and_teardowns_data) in get_inits_and_teardowns_chunks(
+            inits_and_teardowns,
+            per_circuit_count,
+            free_allocators,
+            A::capacity,
+        )
+        .enumerate()
         {
             let sequence_id = sequence_id + sequence_id_offset;
             let count = inits_and_teardowns_data
@@ -308,11 +313,12 @@ pub(super) fn collect_inits_and_teardowns(
     chunks
 }
 
-pub(super) fn get_inits_and_teardowns_chunks(
+pub(super) fn get_inits_and_teardowns_chunks<Alloc: GoodAllocator>(
     values: Vec<Vec<LazyInitAndTeardown>>,
     partition_size: usize,
-    free_allocators: Receiver<A>,
-) -> impl Iterator<Item = ShuffleRamInitsAndTeardownsHost<A>> {
+    free_allocators: Receiver<Alloc>,
+    allocation_bytes: impl Fn(&Alloc) -> usize,
+) -> impl Iterator<Item = ShuffleRamInitsAndTeardownsHost<Alloc>> {
     let inits_and_teardowns_count = values.iter().map(|v| v.len()).sum::<usize>();
     let mut iterator = values.into_iter().flat_map(|v| v.into_iter());
     let partitions_count = inits_and_teardowns_count.div_ceil(partition_size);
@@ -325,7 +331,11 @@ pub(super) fn get_inits_and_teardowns_chunks(
         let mut chunks = vec![];
         while values_count != 0 {
             let allocator = free_allocators.recv().unwrap();
-            let capacity = allocator.capacity() / size_of::<LazyInitAndTeardown>();
+            let capacity = allocation_bytes(&allocator) / size_of::<LazyInitAndTeardown>();
+            assert!(
+                capacity > 0,
+                "allocator cannot hold a RAM init/teardown row"
+            );
             let count = min(capacity, values_count);
             let mut chunk = Vec::with_capacity_in(count, allocator);
             for _ in 0..count {
@@ -345,13 +355,12 @@ pub(super) fn get_inits_and_teardowns_chunks(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use era_cudart::memory::{CudaHostAllocFlags, HostAllocation};
+    use std::alloc::Global;
 
     #[test]
     fn teardown_chunks_preserve_order_across_partitions_and_allocators() {
-        let log_chunk_size = 12;
-        let allocation_bytes = 1usize << log_chunk_size;
-        let chunk_capacity = allocation_bytes / size_of::<LazyInitAndTeardown>();
+        let chunk_capacity = 4;
+        let allocation_bytes = chunk_capacity * size_of::<LazyInitAndTeardown>();
         let expected: Vec<_> = (0..(2 * chunk_capacity + 1))
             .map(|index| LazyInitAndTeardown {
                 address: (4 * index) as u32,
@@ -361,9 +370,7 @@ mod tests {
             .collect();
         let (sender, receiver) = crossbeam_channel::bounded(3);
         for _ in 0..3 {
-            let allocation =
-                HostAllocation::alloc(allocation_bytes, CudaHostAllocFlags::PORTABLE).unwrap();
-            sender.send(A::new([allocation], log_chunk_size)).unwrap();
+            sender.send(Global).unwrap();
         }
         drop(sender);
 
@@ -371,6 +378,7 @@ mod tests {
             vec![expected[..1].to_vec(), expected[1..].to_vec()],
             chunk_capacity + 1,
             receiver,
+            |_| allocation_bytes,
         )
         .collect();
         assert_eq!(chunks.len(), 2);
