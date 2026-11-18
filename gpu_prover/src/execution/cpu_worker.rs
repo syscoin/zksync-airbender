@@ -230,7 +230,7 @@ pub(crate) fn run_replayer<T: TracingType>(
             &mut tracer,
         );
         let elapsed = instant.elapsed();
-        drop(tracer);
+        tracer.finish();
         free_trace_chunks.send(trace).unwrap();
         assert_eq!(state.pc, final_state.pc);
         assert_eq!(state.timestamp, final_state.timestamp);

@@ -8,7 +8,7 @@ use crate::machine_type::MachineType;
 use crate::prover::tracing_data::{
     DelegationTracingDataHostSource, TracingDataHost, UnrolledTracingDataHost,
 };
-use crate::witness::trace::ChunkedTraceHolder;
+use crate::witness::trace::{ChunkedTraceHolder, PendingTraceChunk};
 use crossbeam_channel::{Receiver, Sender};
 use cs::definitions::{
     ADD_SUB_LUI_AUIPC_MOP_CIRCUIT_FAMILY_IDX, BIGINT_OPS_WITH_CONTROL_CSR_REGISTER,
@@ -17,7 +17,7 @@ use cs::definitions::{
     LOAD_STORE_WORD_ONLY_CIRCUIT_FAMILY_IDX, MUL_DIV_CIRCUIT_FAMILY_IDX,
     SHIFT_BINARY_CSR_CIRCUIT_FAMILY_IDX,
 };
-use itertools::Itertools;
+use fft::GoodAllocator;
 use riscv_transpiler::jit::{CounterType, MAX_NUM_COUNTERS};
 use riscv_transpiler::machine_mode_only_unrolled::{
     MemoryOpcodeTracingDataWithTimestamp, NonMemoryOpcodeTracingDataWithTimestamp,
@@ -80,7 +80,9 @@ impl<T> Default for PtrRange<T> {
     }
 }
 
-unsafe impl<T> Send for PtrRange<T> {}
+// SAFETY: The slot range is reserved for one replay worker, and its Arc keeps
+// the allocation alive until the worker relinquishes the pointers.
+unsafe impl<T: Send + Sync> Send for PtrRange<T> {}
 
 pub(crate) trait DataTraceRanges {}
 
@@ -112,7 +114,6 @@ impl DataTraceRanges for UnifiedDataTraceRanges {}
 struct TracerRanges<T: Copy + 'static> {
     queue: VecDeque<PtrRange<T>>,
     current: PtrRange<T>,
-    count: usize,
 }
 
 impl<T: Copy + 'static> TracerRanges<T> {
@@ -120,7 +121,6 @@ impl<T: Copy + 'static> TracerRanges<T> {
         Self {
             queue,
             current: PtrRange::default(),
-            count: 0,
         }
     }
 
@@ -133,11 +133,22 @@ impl<T: Copy + 'static> TracerRanges<T> {
     unsafe fn write_type_unchecked<U: Copy + 'static>(&mut self, value: U) {
         debug_assert_eq!(any::TypeId::of::<T>(), any::TypeId::of::<U>());
         if core::hint::unlikely(self.current.start == self.current.end) {
-            self.current = self.queue.pop_front().unwrap_unchecked();
+            self.current = self
+                .queue
+                .pop_front()
+                .expect("replay exceeded its trace reservation");
         }
-        *(self.current.start as *mut U) = value;
+        // SAFETY: The caller uses the matching trace type, and the current slot
+        // is exclusively reserved for this replay. It may be uninitialized.
+        (self.current.start as *mut U).write(value);
         self.current.start = self.current.start.add(1);
-        self.count += 1;
+    }
+
+    fn finish(self) {
+        assert!(
+            self.queue.is_empty() && self.current.start == self.current.end,
+            "replay left reserved trace rows uninitialized"
+        );
     }
 }
 
@@ -145,6 +156,7 @@ pub(crate) trait Tracer: WitnessTracer {
     type Ranges: DataTraceRanges + Send;
 
     fn new(trace_ranges: Self::Ranges) -> Self;
+    fn finish(self);
 }
 
 pub(crate) struct SplitTracer {
@@ -174,6 +186,18 @@ impl Tracer for SplitTracer {
             word_size_mem_family: TracerRanges::new(trace_ranges.word_size_mem_family),
             subword_size_mem_family: TracerRanges::new(trace_ranges.subword_size_mem_family),
         }
+    }
+
+    fn finish(self) {
+        self.blake_calls.finish();
+        self.bigint_calls.finish();
+        self.keccak_calls.finish();
+        self.add_sub_family.finish();
+        self.binary_shift_csr_family.finish();
+        self.slt_branch_family.finish();
+        self.mul_div_family.finish();
+        self.word_size_mem_family.finish();
+        self.subword_size_mem_family.finish();
     }
 }
 
@@ -272,6 +296,13 @@ impl Tracer for UnifiedTracer {
             cycles: TracerRanges::new(trace_ranges.cycles),
         }
     }
+
+    fn finish(self) {
+        self.blake_calls.finish();
+        self.bigint_calls.finish();
+        self.keccak_calls.finish();
+        self.cycles.finish();
+    }
 }
 
 impl WitnessTracer for UnifiedTracer {
@@ -337,11 +368,44 @@ impl WitnessTracer for UnifiedTracer {
     }
 }
 
-trait TracingDataProducerType: Sized {
+pub(crate) trait PendingTracingData<A: GoodAllocator>: Send {
+    fn reserved_rows(&self) -> usize;
+    fn into_allocators(self: Box<Self>) -> Vec<A>;
+
+    /// # Safety
+    /// All participating snapshots must have initialized their reserved ranges and stopped
+    /// accessing them. An aborted replay or the reservation-only simulator does not qualify.
+    unsafe fn assume_initialized(self: Box<Self>) -> TracingDataHost<A>;
+}
+
+impl<T: TracingDataProducerType> PendingTracingData<A> for Vec<PendingTraceChunk<T, A>> {
+    fn reserved_rows(&self) -> usize {
+        self.iter().map(|chunk| chunk.reserved()).sum()
+    }
+
+    fn into_allocators(self: Box<Self>) -> Vec<A> {
+        self.into_iter()
+            .map(PendingTraceChunk::into_allocator)
+            .collect()
+    }
+
+    unsafe fn assume_initialized(self: Box<Self>) -> TracingDataHost<A> {
+        let chunks = self
+            .into_iter()
+            // SAFETY: The caller established that every participating replay completed.
+            .map(|chunk| unsafe { chunk.assume_initialized() })
+            .collect();
+        T::produce_tracing_data(ChunkedTraceHolder { chunks })
+    }
+}
+
+trait TracingDataProducerType: Copy + Send + Sync + 'static {
     fn produce_tracing_data(holder: ChunkedTraceHolder<Self, A>) -> TracingDataHost<A>;
 }
 
-impl<T: DelegationTracingDataHostSource> TracingDataProducerType for T {
+impl<T: DelegationTracingDataHostSource + Copy + Send + Sync + 'static> TracingDataProducerType
+    for T
+{
     fn produce_tracing_data(holder: ChunkedTraceHolder<Self, A>) -> TracingDataHost<A> {
         TracingDataHost::Delegation(T::get(holder))
     }
@@ -370,7 +434,7 @@ struct TracingDataProducer<T: TracingDataProducerType> {
     free_allocators: Receiver<A>,
     results: Sender<WorkerResult<A>>,
     current_circuit_index: usize,
-    chunks: VecDeque<Arc<Vec<T, A>>>,
+    chunks: Vec<PendingTraceChunk<T, A>>,
     participating_snapshot_indexes: BTreeSet<usize>,
 }
 
@@ -385,7 +449,7 @@ impl<T: TracingDataProducerType> TracingDataProducer<T> {
             free_allocators,
             results,
             current_circuit_index: 0,
-            chunks: VecDeque::new(),
+            chunks: Vec::new(),
             participating_snapshot_indexes: BTreeSet::new(),
         }
     }
@@ -402,27 +466,25 @@ impl<T: TracingDataProducerType> TracingDataProducer<T> {
             let next_circuit_boundary = (start + 1).next_multiple_of(cycles_per_circuit);
             let next_circuit_index = next_circuit_boundary / cycles_per_circuit;
             assert_eq!(next_circuit_index, self.current_circuit_index + 1);
-            if self.chunks.back().map_or(true, |v| v.len() == v.capacity()) {
+            if self
+                .chunks
+                .last()
+                .is_none_or(|chunk| chunk.remaining() == 0)
+            {
                 let allocator = self.free_allocators.recv().unwrap();
                 let capacity = allocator.capacity() / size_of::<T>();
-                let chunk = Arc::new(Vec::with_capacity_in(capacity, allocator));
-                self.chunks.push_back(chunk)
+                self.chunks
+                    .push(PendingTraceChunk::new(capacity, allocator));
             };
-            let chunk = self.chunks.back_mut().unwrap();
-            let chunk_mut = unsafe { Arc::get_mut_unchecked(chunk) };
-            let spare_capacity = chunk_mut.spare_capacity_mut();
+            let chunk = self.chunks.last_mut().unwrap();
             let end = min(end, next_circuit_boundary);
-            let diff = min(spare_capacity.len(), end - start);
+            let diff = min(chunk.remaining(), end - start);
             assert_ne!(diff, 0);
-            let ptr_range = unsafe {
-                let start_ptr = spare_capacity.as_mut_ptr() as *mut T;
-                let end_ptr = start_ptr.add(diff);
-                chunk_mut.set_len(chunk_mut.len() + diff);
-                PtrRange {
-                    start: start_ptr,
-                    end: end_ptr,
-                    _chunk: Some(chunk.clone()),
-                }
+            let (start_ptr, end_ptr, owner) = chunk.reserve(diff);
+            let ptr_range = PtrRange {
+                start: start_ptr,
+                end: end_ptr,
+                _chunk: Some(owner),
             };
             trace_ranges.push_back(ptr_range);
             self.participating_snapshot_indexes.insert(snapshot_index);
@@ -436,9 +498,7 @@ impl<T: TracingDataProducerType> TracingDataProducer<T> {
     }
 
     fn produce_and_send_result(&mut self) {
-        let chunks = self.chunks.drain(..).collect_vec();
-        let holder = ChunkedTraceHolder { chunks };
-        let tracing_data = T::produce_tracing_data(holder);
+        let tracing_data = Box::new(std::mem::take(&mut self.chunks));
         let participating_snapshot_indexes =
             replace(&mut self.participating_snapshot_indexes, BTreeSet::new());
         let data = TracingData {

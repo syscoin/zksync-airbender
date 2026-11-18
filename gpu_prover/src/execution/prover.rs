@@ -941,7 +941,10 @@ impl<S: SecurityMarker> ExecutionProver<S> {
                     &circuit_type
                 );
                 assert_eq!(sequence_id_value.get_or_insert(sequence_id), &sequence_id);
-                Some(tracing_data)
+                // SAFETY: Traces enter this request path only after the collector
+                // has received SnapshotReplayed from every participating replay.
+                // Each completion follows the check that all reserved slots were written.
+                Some(unsafe { tracing_data.assume_initialized() })
             } else {
                 None
             };
@@ -1261,7 +1264,9 @@ impl<S: SecurityMarker> ExecutionProver<S> {
         assert_eq!(pending_requests_count, 0);
         if abort_signaled {
             uninitialized_tracing_data.into_values().for_each(|data| {
-                self.free_tracing_data(data.tracing_data);
+                for allocator in data.tracing_data.into_allocators() {
+                    self.free_allocators_sender.send(allocator).unwrap();
+                }
             });
             unpaired_unified_inits_and_teardowns
                 .into_values()
@@ -1273,7 +1278,9 @@ impl<S: SecurityMarker> ExecutionProver<S> {
             unpaired_unified_tracing_data
                 .into_values()
                 .for_each(|data| {
-                    self.free_tracing_data(data.tracing_data);
+                    for allocator in data.tracing_data.into_allocators() {
+                        self.free_allocators_sender.send(allocator).unwrap();
+                    }
                 });
         } else {
             assert!(uninitialized_tracing_data.is_empty());

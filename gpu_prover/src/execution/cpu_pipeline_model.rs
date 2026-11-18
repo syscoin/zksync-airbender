@@ -7,9 +7,6 @@ use super::A;
 use crate::circuit_type::{CircuitType, UnrolledCircuitType};
 use crate::execution::prover::ExecutionKind;
 use crate::machine_type::MachineType;
-use crate::prover::tracing_data::{
-    DelegationTracingDataHost, TracingDataHost, UnrolledTracingDataHost,
-};
 use crate::witness::trace_unrolled::ShuffleRamInitsAndTeardownsHost;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use cs::definitions::TimestampScalar;
@@ -598,7 +595,7 @@ fn run_replayer_for_model<T: TracingType>(
             &mut tracer,
         );
         let elapsed = instant.elapsed();
-        drop(tracer);
+        tracer.finish();
         free_trace_chunks.send(trace).unwrap();
         assert_eq!(state.pc, final_state.pc);
         assert_eq!(state.timestamp, final_state.timestamp);
@@ -652,7 +649,7 @@ fn hold_or_release_tracing_data(
         .participating_snapshot_indexes
         .is_subset(processed_snapshots)
     {
-        free_tracing_data(data.tracing_data, free_allocators);
+        free_tracing_data(data, free_allocators);
         return;
     }
 
@@ -685,7 +682,7 @@ fn release_ready_tracing_data(
             .is_subset(processed_snapshots)
         {
             let data = pending_tracing_data.remove(&key).unwrap();
-            free_tracing_data(data.tracing_data, free_allocators);
+            free_tracing_data(data, free_allocators);
         }
     }
 }
@@ -700,26 +697,11 @@ fn consume_simulation_result(result: SimulationResult, report: &mut CpuPipelineM
 }
 
 fn record_tracing_data_metrics(data: &TracingData<A>, report: &mut CpuPipelineModelReport) {
-    let len = tracing_data_len(&data.tracing_data);
+    let len = data.tracing_data.reserved_rows();
     *report
         .tracing_rows_by_circuit
         .entry(data.circuit_type)
         .or_default() += len;
-}
-
-fn tracing_data_len(data: &TracingDataHost<A>) -> usize {
-    match data {
-        TracingDataHost::Delegation(data) => match data {
-            DelegationTracingDataHost::BigIntWithControl(data) => data.len(),
-            DelegationTracingDataHost::Blake2WithCompression(data) => data.len(),
-            DelegationTracingDataHost::KeccakSpecial5(data) => data.len(),
-        },
-        TracingDataHost::Unrolled(data) => match data {
-            UnrolledTracingDataHost::Memory(data) => data.len(),
-            UnrolledTracingDataHost::NonMemory(data) => data.len(),
-            UnrolledTracingDataHost::Unified(data) => data.len(),
-        },
-    }
 }
 
 fn free_inits_and_teardowns(
@@ -731,8 +713,8 @@ fn free_inits_and_teardowns(
     }
 }
 
-fn free_tracing_data(tracing_data: TracingDataHost<A>, free_allocators: &Sender<A>) {
-    for allocator in tracing_data.into_allocators() {
+fn free_tracing_data(data: TracingData<A>, free_allocators: &Sender<A>) {
+    for allocator in data.tracing_data.into_allocators() {
         free_allocators.send(allocator).unwrap();
     }
 }
