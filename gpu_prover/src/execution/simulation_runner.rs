@@ -5,9 +5,7 @@ use crate::execution::A;
 use crate::machine_type::MachineType;
 use crossbeam_channel::{Receiver, Sender};
 use cs::definitions::{INITIAL_TIMESTAMP, TIMESTAMP_STEP};
-use era_cudart::memory::{CudaHostAllocFlags, CudaHostRegisterFlags, HostAllocation};
-use era_cudart::result::CudaResultWrap;
-use era_cudart_sys::{cudaHostRegister, cudaHostUnregister};
+use era_cudart::memory::{CudaHostAllocFlags, HostAllocation};
 use itertools::Itertools;
 use log::{debug, trace};
 use riscv_transpiler::common_constants::ROM_WORD_SIZE;
@@ -17,7 +15,6 @@ use riscv_transpiler::jit::{
 use riscv_transpiler::vm::NonDeterminismCSRSource;
 use std::mem::replace;
 use std::ops::{Deref, DerefMut};
-use std::os::raw::c_void;
 use std::ptr::NonNull;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
@@ -86,60 +83,6 @@ mod compat {
             _initial_trace_chunk: NonNull<TraceChunk>,
         ) {
             panic!("gpu_prover simulation requires the x86_64 JIT backend");
-        }
-    }
-}
-
-pub(crate) struct LockedBoxedMemoryHolder {
-    pub holder: Box<MemoryHolder>,
-}
-
-impl LockedBoxedMemoryHolder {
-    pub fn new(ram_config: JitRunnerRam) -> Self {
-        unsafe {
-            let mut holder = MemoryHolder::allocate_zeroed(ram_config, Default::default());
-            // the holder is sized from the RAM configuration, so its size comes from
-            // the value rather than the type
-            let total_size_bytes = holder.byte_size();
-            cudaHostRegister(
-                holder.as_mut() as *mut MemoryHolder as *mut c_void,
-                total_size_bytes,
-                CudaHostRegisterFlags::DEFAULT.bits(),
-            )
-            .wrap()
-            .unwrap();
-            Self { holder }
-        }
-    }
-
-    /// Page-locked bytes one holder occupies: the whole boxed `MemoryHolder` is
-    /// registered with CUDA, and unregistered and freed when it is dropped. The
-    /// holder is sized from the RAM configuration, so that has to be named here.
-    pub(crate) fn pinned_bytes(ram_config: JitRunnerRam) -> usize {
-        ram_config.holder_byte_size()
-    }
-}
-
-impl Deref for LockedBoxedMemoryHolder {
-    type Target = MemoryHolder;
-
-    fn deref(&self) -> &Self::Target {
-        &self.holder
-    }
-}
-
-impl DerefMut for LockedBoxedMemoryHolder {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.holder
-    }
-}
-
-impl Drop for LockedBoxedMemoryHolder {
-    fn drop(&mut self) {
-        unsafe {
-            cudaHostUnregister(self.holder.as_mut() as *mut MemoryHolder as *mut c_void)
-                .wrap()
-                .unwrap();
         }
     }
 }

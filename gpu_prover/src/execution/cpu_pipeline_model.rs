@@ -1,8 +1,7 @@
 use super::cpu_worker::{collect_inits_and_teardowns, get_inits_and_teardowns_chunks};
 use super::messages::{InitsAndTeardownsData, SimulationResult, TracingData, WorkerResult};
-use super::simulation_runner::{
-    LockedBoxedMemoryHolder, LockedBoxedTraceChunk, SimulationRunner, Snapshot,
-};
+use super::simulation_runner::{LockedBoxedTraceChunk, SimulationRunner, Snapshot};
+use super::simulator_memory::SimulatorMemoryHolder;
 use super::tracing::{SplitTracingType, Tracer, TracingType, UnifiedTracingType};
 use super::A;
 use crate::circuit_type::{CircuitType, UnrolledCircuitType};
@@ -21,7 +20,7 @@ use riscv_transpiler::ir::{
     preprocess_bytecode, FullMachineDecoderConfig, FullUnsignedMachineDecoderConfig,
     ReducedMachineDecoderConfig,
 };
-use riscv_transpiler::jit::{JitRunnerRam, MemoryHolder, ReplayerMemChunks};
+use riscv_transpiler::jit::{JitRunnerRam, ReplayerMemChunks};
 use riscv_transpiler::replayer::ReplayerVM;
 use riscv_transpiler::vm::{InstructionTape, SimpleTape, State};
 use std::collections::{BTreeMap, BTreeSet};
@@ -125,7 +124,7 @@ pub struct CpuPipelineModel {
     text_section: Arc<Box<[u32]>>,
     instruction_tape: Arc<SimpleTape>,
     jit_cache: Arc<Mutex<TypeMap>>,
-    memory_holders_cache: Arc<Mutex<Vec<LockedBoxedMemoryHolder>>>,
+    memory_holders_cache: Arc<Mutex<Vec<SimulatorMemoryHolder>>>,
     trace_chunks_cache: Arc<Mutex<Vec<Vec<LockedBoxedTraceChunk>>>>,
     free_allocators_sender: Sender<A>,
     free_allocators_receiver: Receiver<A>,
@@ -152,7 +151,7 @@ impl CpuPipelineModel {
 
         let mut memory_holders = Vec::with_capacity(config.memory_holders_count);
         for _ in 0..config.memory_holders_count {
-            memory_holders.push(LockedBoxedMemoryHolder::new(config.ram_config));
+            memory_holders.push(SimulatorMemoryHolder::new(config.ram_config));
         }
 
         let trace_chunks_count = trace_chunks_count(&config);
@@ -428,7 +427,7 @@ fn run_simulator_for_model<T: TracingType + 'static>(
     text_section: impl Deref<Target = impl Deref<Target = [u32]>>,
     cycles_bound: Option<u32>,
     jit_cache: Arc<Mutex<TypeMap>>,
-    memory_holder: &mut LockedBoxedMemoryHolder,
+    memory_holder: &mut SimulatorMemoryHolder,
     non_determinism_source: QuasiUARTSource,
     free_trace_chunks_sender: Sender<LockedBoxedTraceChunk>,
     free_trace_chunks_receiver: Receiver<LockedBoxedTraceChunk>,
@@ -473,7 +472,7 @@ fn run_simulator_for_model<T: TracingType + 'static>(
     } = runner;
     let should_abort = abort.load(std::sync::atomic::Ordering::Relaxed);
     if should_abort {
-        MemoryHolder::reset(&mut memory_holder.holder);
+        memory_holder.reset_after_abort();
         return;
     }
 

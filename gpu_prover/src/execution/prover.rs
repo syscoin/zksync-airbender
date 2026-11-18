@@ -1,5 +1,6 @@
 use super::gpu_manager::GpuManager;
 use super::precomputations::{get_common_precomputations, CircuitPrecomputations};
+use super::simulator_memory::SimulatorMemoryHolder;
 use super::A;
 use crate::circuit_type::{
     CircuitType, UnrolledCircuitType, UnrolledMemoryCircuitType, UnrolledNonMemoryCircuitType,
@@ -12,7 +13,7 @@ use crate::execution::messages::{
     MemoryCommitmentResult, ProofRequest, ProofResult, SetupCapsRequest, SimulationResult,
     TracingData, WorkerResult,
 };
-use crate::execution::simulation_runner::{LockedBoxedMemoryHolder, LockedBoxedTraceChunk};
+use crate::execution::simulation_runner::LockedBoxedTraceChunk;
 use crate::execution::tracing::{SplitTracingType, UnifiedTracingType};
 use crate::machine_type::MachineType;
 use crate::prover::context::ProverContextConfig;
@@ -282,7 +283,7 @@ pub struct ExecutionProver<S: SecurityMarker> {
     configuration: ExecutionProverConfiguration,
     gpu_manager: GpuManager<S>,
     worker: Arc<Worker>,
-    memory_holders_cache: Arc<Mutex<Vec<LockedBoxedMemoryHolder>>>,
+    memory_holders_cache: Arc<Mutex<Vec<SimulatorMemoryHolder>>>,
     trace_chunks_cache: Arc<Mutex<Vec<Vec<LockedBoxedTraceChunk>>>>,
     binary_holders: BTreeMap<usize, BinaryHolder>,
     common_precomputations: BTreeMap<CircuitType, CircuitPrecomputations>,
@@ -309,7 +310,7 @@ pub struct ExecutionProver<S: SecurityMarker> {
 pub struct ExecutionProverHostState {
     configuration: ExecutionProverConfiguration,
     worker: Arc<Worker>,
-    memory_holders_cache: Arc<Mutex<Vec<LockedBoxedMemoryHolder>>>,
+    memory_holders_cache: Arc<Mutex<Vec<SimulatorMemoryHolder>>>,
     trace_chunks_cache: Arc<Mutex<Vec<Vec<LockedBoxedTraceChunk>>>>,
     binary_holders: BTreeMap<usize, BinaryHolder>,
     common_precomputations: BTreeMap<CircuitType, CircuitPrecomputations>,
@@ -346,7 +347,7 @@ impl ExecutionProverHostState {
         info!("PROVER creating memory holders cache with {simulator_cache_entries_count} entries");
         let memory_holders_cache = (0..simulator_cache_entries_count)
             .into_par_iter()
-            .map(|_| LockedBoxedMemoryHolder::new(ram_config))
+            .map(|_| SimulatorMemoryHolder::new(ram_config))
             .collect();
         let memory_holders_cache = Arc::new(Mutex::new(memory_holders_cache));
         let trace_chunks_count = replay_worker_threads_count * 2;
@@ -441,8 +442,13 @@ impl ExecutionProverHostState {
     pub fn pinned_host_bytes(&self) -> usize {
         let host_allocators = self.free_allocators_receiver.len()
             * self.configuration.host_allocator_backing_allocation_size;
-        let memory_holders = self.memory_holders_cache.lock().unwrap().len()
-            * LockedBoxedMemoryHolder::pinned_bytes(self.configuration.ram_config);
+        let memory_holders = self
+            .memory_holders_cache
+            .lock()
+            .unwrap()
+            .iter()
+            .map(SimulatorMemoryHolder::pinned_bytes)
+            .sum::<usize>();
         let trace_chunks = self
             .trace_chunks_cache
             .lock()
@@ -764,7 +770,7 @@ impl<S: SecurityMarker> ExecutionProver<S> {
                         if cache.is_empty() {
                             drop(cache);
                             warn!("BATCH[{batch_id}] PROVER memory holders cache is empty, creating a new memory holder");
-                            LockedBoxedMemoryHolder::new(ram_config)
+                            SimulatorMemoryHolder::new(ram_config)
                         } else {
                             cache.pop().unwrap()
                         }

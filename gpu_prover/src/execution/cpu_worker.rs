@@ -1,10 +1,10 @@
+use super::simulator_memory::SimulatorMemoryHolder;
 use super::A;
 use crate::circuit_type::{CircuitType, UnrolledCircuitType};
 use crate::execution::messages::SimulationResult;
 use crate::execution::messages::{InitsAndTeardownsData, WorkerResult};
 use crate::execution::simulation_runner::{
-    EmptyInitsAndTeardownsStreamer, LockedBoxedMemoryHolder, LockedBoxedTraceChunk,
-    SimulationRunner, Snapshot,
+    EmptyInitsAndTeardownsStreamer, LockedBoxedTraceChunk, SimulationRunner, Snapshot,
 };
 use crate::execution::tracing::{Tracer, TracingType};
 use crate::machine_type::MachineType;
@@ -39,7 +39,7 @@ pub(crate) fn run_simulator<
     text_section: impl Deref<Target = impl Deref<Target = [u32]>>,
     cycles_bound: Option<u32>,
     jit_cache: Arc<Mutex<TypeMap>>,
-    memory_holder: &mut LockedBoxedMemoryHolder,
+    memory_holder: &mut SimulatorMemoryHolder,
     non_determinism: Arc<Mutex<Option<ND>>>,
     free_trace_chunks_sender: Sender<LockedBoxedTraceChunk>,
     free_trace_chunks_receiver: Receiver<LockedBoxedTraceChunk>,
@@ -51,7 +51,7 @@ pub(crate) fn run_simulator<
     ram_config: JitRunnerRam,
 ) {
     assert_ne!(ram_config, JitRunnerRam::UninitPlaceholder);
-    assert_eq!(ram_config.ram_size(), memory_holder.holder.ram_size());
+    assert_eq!(ram_config.ram_size(), memory_holder.ram_size());
     trace!("BATCH[{batch_id}] SIMULATOR started");
     let mut non_determinism_guard = non_determinism.lock().unwrap();
     let non_determinism_source = non_determinism_guard.take().unwrap();
@@ -70,7 +70,7 @@ pub(crate) fn run_simulator<
     // Collection can emit at most one teardown per addressable RAM word.
     runner.empty_it_streamer = (!T::IS_SPLIT).then(|| {
         EmptyInitsAndTeardownsStreamer::new(
-            memory_holder.holder.ram_size() / size_of::<u32>(),
+            memory_holder.ram_size() / size_of::<u32>(),
             setups::unified_reduced_machine::NUM_CYCLES,
         )
     });
@@ -172,7 +172,7 @@ pub(crate) fn run_simulator<
         results.send(result).unwrap();
     } else {
         trace!("BATCH[{batch_id}] SIMULATOR resetting memory due to abort");
-        MemoryHolder::reset(&mut memory_holder.holder);
+        memory_holder.reset_after_abort();
     }
     trace!("BATCH[{batch_id}] SIMULATOR finished");
 }
