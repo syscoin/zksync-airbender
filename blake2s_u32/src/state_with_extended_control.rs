@@ -44,19 +44,12 @@ impl Blake2RoundFunctionEvaluator {
         unreachable!("unsupported")
     }
 
-    /// NOTE: caller must explicitly "reset" before using if use mode is not compression
-    #[allow(invalid_value)]
     pub fn new() -> Self {
-        unsafe {
-            // NOTE: it would only be used in RISC-V simulated machine with zero-by-default state,
-            // where all memory is initialized and physical, so "touching" memory slots is not required
-            let mut new: Self = MaybeUninit::uninit().assume_init();
-            new.t = 0;
-
-            // we will copy-over the initial state to avoid complications
-            new.reset();
-
-            new
+        Self {
+            state: CONFIGURED_IV,
+            extended_state: [0; BLAKE2S_EXTENDED_STATE_WIDTH_IN_U32_WORDS],
+            input_buffer: AlignedArray64::from_value(0),
+            t: 0,
         }
     }
 

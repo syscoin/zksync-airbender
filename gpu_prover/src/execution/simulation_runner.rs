@@ -1,12 +1,11 @@
-use crate::execution::messages::WorkerResult;
+use crate::circuit_type::{CircuitType, UnrolledCircuitType};
+use crate::execution::messages::{InitsAndTeardownsData, WorkerResult};
 use crate::execution::tracing::{DataTraceRanges, TracingDataProducers, TracingType};
 use crate::execution::A;
 use crate::machine_type::MachineType;
 use crossbeam_channel::{Receiver, Sender};
 use cs::definitions::{INITIAL_TIMESTAMP, TIMESTAMP_STEP};
-use era_cudart::memory::{CudaHostAllocFlags, CudaHostRegisterFlags, HostAllocation};
-use era_cudart::result::CudaResultWrap;
-use era_cudart_sys::{cudaHostRegister, cudaHostUnregister};
+use era_cudart::memory::{CudaHostAllocFlags, HostAllocation};
 use itertools::Itertools;
 use log::{debug, trace};
 use riscv_transpiler::common_constants::ROM_WORD_SIZE;
@@ -16,12 +15,15 @@ use riscv_transpiler::jit::{
 use riscv_transpiler::vm::NonDeterminismCSRSource;
 use std::mem::replace;
 use std::ops::{Deref, DerefMut};
-use std::os::raw::c_void;
 use std::ptr::NonNull;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use type_map::concurrent::TypeMap;
+
+#[path = "empty_inits_and_teardowns.rs"]
+mod empty_inits_and_teardowns;
+pub(crate) use empty_inits_and_teardowns::EmptyInitsAndTeardownsStreamer;
 
 #[cfg(not(target_arch = "x86_64"))]
 use self::compat::{Context, JittedCode};
@@ -85,60 +87,6 @@ mod compat {
     }
 }
 
-pub(crate) struct LockedBoxedMemoryHolder {
-    pub holder: Box<MemoryHolder>,
-}
-
-impl LockedBoxedMemoryHolder {
-    pub fn new(ram_config: JitRunnerRam) -> Self {
-        unsafe {
-            let mut holder = MemoryHolder::allocate_zeroed(ram_config, Default::default());
-            // the holder is sized from the RAM configuration, so its size comes from
-            // the value rather than the type
-            let total_size_bytes = holder.byte_size();
-            cudaHostRegister(
-                holder.as_mut() as *mut MemoryHolder as *mut c_void,
-                total_size_bytes,
-                CudaHostRegisterFlags::DEFAULT.bits(),
-            )
-            .wrap()
-            .unwrap();
-            Self { holder }
-        }
-    }
-
-    /// Page-locked bytes one holder occupies: the whole boxed `MemoryHolder` is
-    /// registered with CUDA, and unregistered and freed when it is dropped. The
-    /// holder is sized from the RAM configuration, so that has to be named here.
-    pub(crate) fn pinned_bytes(ram_config: JitRunnerRam) -> usize {
-        ram_config.holder_byte_size()
-    }
-}
-
-impl Deref for LockedBoxedMemoryHolder {
-    type Target = MemoryHolder;
-
-    fn deref(&self) -> &Self::Target {
-        &self.holder
-    }
-}
-
-impl DerefMut for LockedBoxedMemoryHolder {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.holder
-    }
-}
-
-impl Drop for LockedBoxedMemoryHolder {
-    fn drop(&mut self) {
-        unsafe {
-            cudaHostUnregister(self.holder.as_mut() as *mut MemoryHolder as *mut c_void)
-                .wrap()
-                .unwrap();
-        }
-    }
-}
-
 pub(crate) struct LockedBoxedTraceChunk {
     pub chunk: Box<TraceChunk, A>,
 }
@@ -150,7 +98,9 @@ impl LockedBoxedTraceChunk {
         let allocation =
             HostAllocation::alloc(Self::pinned_bytes(), CudaHostAllocFlags::DEFAULT).unwrap();
         let allocator = A::new(vec![allocation], Self::LOG_CHUNK_SIZE);
-        let chunk = unsafe { Box::<TraceChunk, _>::new_uninit_in(allocator).assume_init() };
+        // SAFETY: TraceChunk contains only integer arrays and an integer length. Initialize the
+        // pinned allocation in place so its size never becomes a temporary stack frame.
+        let chunk = unsafe { Box::<TraceChunk, _>::new_zeroed_in(allocator).assume_init() };
         Self { chunk }
     }
 
@@ -201,6 +151,7 @@ pub(crate) struct SimulationRunner<
     pub trace: Option<LockedBoxedTraceChunk>,
     pub snapshot_index: usize,
     pub tracing_data_producers: Option<T::Producers>,
+    pub empty_it_streamer: Option<EmptyInitsAndTeardownsStreamer>,
     pub instant: Option<Instant>,
     pub total_elapsed: Duration,
     pub is_aborted: bool,
@@ -238,6 +189,7 @@ impl<ND: NonDeterminismCSRSource + Send + 'static, T: TracingType + 'static>
             trace: None,
             snapshot_index: 0,
             tracing_data_producers,
+            empty_it_streamer: None,
             instant: None,
             total_elapsed: Default::default(),
             is_aborted: false,
@@ -336,6 +288,26 @@ impl<ND: NonDeterminismCSRSource + Send + 'static, T: TracingType + 'static>
             debug!("BATCH[{batch_id}] SIMULATOR stopping snapshot production due to abort signal after {cycles_count} cycles in {elapsed_ms:.3} ms @ {mhz:.3} MHz");
             self.is_aborted = true;
             return;
+        }
+        // Send provably empty unified markers before process_snapshot can block
+        // receiving a host allocator. This lets earlier tracing results pair
+        // and dispatch instead of pinning their allocators until the VM ends.
+        if let (Some(streamer), Some(results)) =
+            (self.empty_it_streamer.as_mut(), self.results.as_ref())
+        {
+            let cycles_so_far = ((timestamp - INITIAL_TIMESTAMP) / TIMESTAMP_STEP) as usize;
+            for sequence_id in streamer.release(cycles_so_far) {
+                let data = InitsAndTeardownsData {
+                    circuit_type: CircuitType::Unrolled(UnrolledCircuitType::Unified),
+                    sequence_id,
+                    inits_and_teardowns: None,
+                };
+                results
+                    .send(WorkerResult::InitsAndTeardownsData(data))
+                    .expect(
+                    "simulation results channel closed while streaming empty init/teardown markers",
+                );
+            }
         }
         let trace = self.trace.take().unwrap();
         let result = WorkerResult::SnapshotProduced;

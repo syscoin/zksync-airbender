@@ -10,20 +10,22 @@ use crate::blake2s::Digest;
 use cs::one_row_compiler::CompiledCircuitArtifact;
 use era_cudart::memory::{memory_copy, CudaHostAllocFlags, HostAllocation};
 use era_cudart::result::CudaResult;
-use era_cudart::slice::CudaSlice;
+use era_cudart::slice::{CudaSlice, DeviceSlice};
 use era_cudart_sys::CudaError;
 use prover::merkle_trees::MerkleTreeCapVarLength;
-use std::mem::size_of;
-use std::ops::{Deref, DerefMut};
+use std::alloc::Allocator;
+use std::mem::{size_of, MaybeUninit};
+use std::ops::DerefMut;
 use std::sync::Arc;
 
 pub(crate) type SetupPartialTreeHost = Arc<Vec<Digest, ConcurrentStaticHostAllocator>>;
 
 const SETUP_PARTIAL_TREE_HOST_LOG_CHUNK_SIZE: u32 = 12;
 
-fn allocate_setup_partial_tree_host(
-    elements: usize,
+fn copy_setup_partial_tree_to_host(
+    device_tree: &DeviceSlice<Digest>,
 ) -> CudaResult<Vec<Digest, ConcurrentStaticHostAllocator>> {
+    let elements = device_tree.len();
     let chunk_bytes = 1usize << SETUP_PARTIAL_TREE_HOST_LOG_CHUNK_SIZE;
     let requested_bytes = elements
         .checked_mul(size_of::<Digest>())
@@ -36,9 +38,54 @@ fn allocate_setup_partial_tree_host(
     let allocation = HostAllocation::alloc(allocation_bytes, CudaHostAllocFlags::PORTABLE)?;
     let allocator =
         ConcurrentStaticHostAllocator::new([allocation], SETUP_PARTIAL_TREE_HOST_LOG_CHUNK_SIZE);
+    // SAFETY: MaybeUninit<Digest> has the same layout as Digest and can represent
+    // each one without accessing the device memory on the host.
+    let src = unsafe { device_tree.transmute::<MaybeUninit<Digest>>() };
+    // SAFETY: On success the synchronous CUDA copy initializes the entire destination.
+    unsafe { initialize_setup_tree(elements, allocator, |dst| memory_copy(dst, src)) }
+}
+
+/// # Safety
+/// A successful copy must have initialized every digest in the destination.
+unsafe fn initialize_setup_tree<A: Allocator>(
+    elements: usize,
+    allocator: A,
+    copy: impl FnOnce(&mut [MaybeUninit<Digest>]) -> CudaResult<()>,
+) -> CudaResult<Vec<Digest, A>> {
     let mut tree = Vec::with_capacity_in(elements, allocator);
+    copy(&mut tree.spare_capacity_mut()[..elements])?;
+    // SAFETY: The successful initializer filled the reserved slots.
     unsafe { tree.set_len(elements) };
     Ok(tree)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use era_cudart::memory::DeviceAllocation;
+    use std::alloc::Global;
+
+    #[test]
+    fn setup_copy_failure_discards_partially_written_storage() {
+        // SAFETY: The initializer reports a failure and may leave any slot unwritten.
+        let result = unsafe {
+            initialize_setup_tree(2, Global, |dst| {
+                dst[0].write([1; 8]);
+                Err(CudaError::ErrorInvalidValue)
+            })
+        };
+        assert!(matches!(result, Err(CudaError::ErrorInvalidValue)));
+    }
+
+    #[test]
+    fn pinned_setup_partial_tree_copy_preserves_digests() {
+        let expected = [[1; 8], [2; 8], [3; 8]];
+        let mut device_tree = DeviceAllocation::alloc(expected.len()).unwrap();
+        memory_copy(&mut device_tree, &expected[..]).unwrap();
+
+        let host_tree = copy_setup_partial_tree_to_host(&device_tree).unwrap();
+        assert_eq!(host_tree.as_slice(), &expected);
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -224,8 +271,7 @@ impl<'a> SetupPrecomputations<'a> {
             if device_tree.len() != expected_tree_len {
                 return Err(CudaError::ErrorInvalidValue);
             }
-            let mut host_tree = allocate_setup_partial_tree_host(device_tree.len())?;
-            memory_copy(host_tree.as_mut_slice(), device_tree.deref())?;
+            let host_tree = copy_setup_partial_tree_to_host(device_tree)?;
             partial_trees.push(Arc::new(host_tree));
         }
         Ok(SetupTreesAndCaps {

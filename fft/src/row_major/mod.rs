@@ -2,7 +2,7 @@ pub mod precomputes;
 
 pub use self::precomputes::*;
 
-use std::{alloc::Allocator, mem::MaybeUninit, sync::Barrier};
+use std::{alloc::Allocator, sync::Barrier};
 
 use super::*;
 use ::field::*;
@@ -207,7 +207,7 @@ pub fn row_major_fft<const N: usize, const M: usize>(
     precomputations: &[Mersenne31Complex],
     powers_to_distribute: &[Mersenne31Complex],
 ) {
-    assert!(M >= 2);
+    assert!((2..=FFT_UNROLL_FACTOR).contains(&M) && M % 2 == 0);
     let trace_len = trace_columns.len();
     assert!(trace_len.is_power_of_two());
     assert_eq!(trace_len, powers_to_distribute.len());
@@ -239,10 +239,8 @@ pub fn row_major_fft<const N: usize, const M: usize>(
             let pow_for_u = *powers_to_distribute.get_unchecked(j);
             let pow_for_v = *powers_to_distribute.get_unchecked(j + distance);
 
-            #[allow(invalid_value)]
-            let mut add_res = [MaybeUninit::uninit().assume_init(); M];
-            #[allow(invalid_value)]
-            let mut sub_res = [MaybeUninit::uninit().assume_init(); M];
+            let mut add_res = u;
+            let mut sub_res = u;
 
             for i in 0..32 {
                 debug_assert!(i * 2 < FFT_UNROLL_FACTOR);

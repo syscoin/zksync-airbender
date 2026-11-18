@@ -1,16 +1,12 @@
 use super::cpu_worker::{collect_inits_and_teardowns, get_inits_and_teardowns_chunks};
 use super::messages::{InitsAndTeardownsData, SimulationResult, TracingData, WorkerResult};
-use super::simulation_runner::{
-    LockedBoxedMemoryHolder, LockedBoxedTraceChunk, SimulationRunner, Snapshot,
-};
+use super::simulation_runner::{LockedBoxedTraceChunk, SimulationRunner, Snapshot};
+use super::simulator_memory::SimulatorMemoryHolder;
 use super::tracing::{SplitTracingType, Tracer, TracingType, UnifiedTracingType};
 use super::A;
 use crate::circuit_type::{CircuitType, UnrolledCircuitType};
 use crate::execution::prover::ExecutionKind;
 use crate::machine_type::MachineType;
-use crate::prover::tracing_data::{
-    DelegationTracingDataHost, TracingDataHost, UnrolledTracingDataHost,
-};
 use crate::witness::trace_unrolled::ShuffleRamInitsAndTeardownsHost;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use cs::definitions::TimestampScalar;
@@ -21,7 +17,7 @@ use riscv_transpiler::ir::{
     preprocess_bytecode, FullMachineDecoderConfig, FullUnsignedMachineDecoderConfig,
     ReducedMachineDecoderConfig,
 };
-use riscv_transpiler::jit::{JitRunnerRam, MemoryHolder, ReplayerMemChunks};
+use riscv_transpiler::jit::{JitRunnerRam, ReplayerMemChunks};
 use riscv_transpiler::replayer::ReplayerVM;
 use riscv_transpiler::vm::{InstructionTape, SimpleTape, State};
 use std::collections::{BTreeMap, BTreeSet};
@@ -125,7 +121,7 @@ pub struct CpuPipelineModel {
     text_section: Arc<Box<[u32]>>,
     instruction_tape: Arc<SimpleTape>,
     jit_cache: Arc<Mutex<TypeMap>>,
-    memory_holders_cache: Arc<Mutex<Vec<LockedBoxedMemoryHolder>>>,
+    memory_holders_cache: Arc<Mutex<Vec<SimulatorMemoryHolder>>>,
     trace_chunks_cache: Arc<Mutex<Vec<Vec<LockedBoxedTraceChunk>>>>,
     free_allocators_sender: Sender<A>,
     free_allocators_receiver: Receiver<A>,
@@ -152,7 +148,7 @@ impl CpuPipelineModel {
 
         let mut memory_holders = Vec::with_capacity(config.memory_holders_count);
         for _ in 0..config.memory_holders_count {
-            memory_holders.push(LockedBoxedMemoryHolder::new(config.ram_config));
+            memory_holders.push(SimulatorMemoryHolder::new(config.ram_config));
         }
 
         let trace_chunks_count = trace_chunks_count(&config);
@@ -428,7 +424,7 @@ fn run_simulator_for_model<T: TracingType + 'static>(
     text_section: impl Deref<Target = impl Deref<Target = [u32]>>,
     cycles_bound: Option<u32>,
     jit_cache: Arc<Mutex<TypeMap>>,
-    memory_holder: &mut LockedBoxedMemoryHolder,
+    memory_holder: &mut SimulatorMemoryHolder,
     non_determinism_source: QuasiUARTSource,
     free_trace_chunks_sender: Sender<LockedBoxedTraceChunk>,
     free_trace_chunks_receiver: Receiver<LockedBoxedTraceChunk>,
@@ -473,7 +469,7 @@ fn run_simulator_for_model<T: TracingType + 'static>(
     } = runner;
     let should_abort = abort.load(std::sync::atomic::Ordering::Relaxed);
     if should_abort {
-        MemoryHolder::reset(&mut memory_holder.holder);
+        memory_holder.reset_after_abort();
         return;
     }
 
@@ -515,9 +511,13 @@ fn run_simulator_for_model<T: TracingType + 'static>(
         )
     };
     let circuit_type = CircuitType::Unrolled(circuit_type);
-    for (sequence_id, inits_and_teardowns_data) in
-        get_inits_and_teardowns_chunks(inits_and_teardowns, per_circuit_count, free_allocators)
-            .enumerate()
+    for (sequence_id, inits_and_teardowns_data) in get_inits_and_teardowns_chunks(
+        inits_and_teardowns,
+        per_circuit_count,
+        free_allocators,
+        A::capacity,
+    )
+    .enumerate()
     {
         let data = InitsAndTeardownsData {
             circuit_type,
@@ -599,7 +599,7 @@ fn run_replayer_for_model<T: TracingType>(
             &mut tracer,
         );
         let elapsed = instant.elapsed();
-        drop(tracer);
+        tracer.finish();
         free_trace_chunks.send(trace).unwrap();
         assert_eq!(state.pc, final_state.pc);
         assert_eq!(state.timestamp, final_state.timestamp);
@@ -653,7 +653,7 @@ fn hold_or_release_tracing_data(
         .participating_snapshot_indexes
         .is_subset(processed_snapshots)
     {
-        free_tracing_data(data.tracing_data, free_allocators);
+        free_tracing_data(data, free_allocators);
         return;
     }
 
@@ -686,7 +686,7 @@ fn release_ready_tracing_data(
             .is_subset(processed_snapshots)
         {
             let data = pending_tracing_data.remove(&key).unwrap();
-            free_tracing_data(data.tracing_data, free_allocators);
+            free_tracing_data(data, free_allocators);
         }
     }
 }
@@ -701,26 +701,11 @@ fn consume_simulation_result(result: SimulationResult, report: &mut CpuPipelineM
 }
 
 fn record_tracing_data_metrics(data: &TracingData<A>, report: &mut CpuPipelineModelReport) {
-    let len = tracing_data_len(&data.tracing_data);
+    let len = data.tracing_data.reserved_rows();
     *report
         .tracing_rows_by_circuit
         .entry(data.circuit_type)
         .or_default() += len;
-}
-
-fn tracing_data_len(data: &TracingDataHost<A>) -> usize {
-    match data {
-        TracingDataHost::Delegation(data) => match data {
-            DelegationTracingDataHost::BigIntWithControl(data) => data.len(),
-            DelegationTracingDataHost::Blake2WithCompression(data) => data.len(),
-            DelegationTracingDataHost::KeccakSpecial5(data) => data.len(),
-        },
-        TracingDataHost::Unrolled(data) => match data {
-            UnrolledTracingDataHost::Memory(data) => data.len(),
-            UnrolledTracingDataHost::NonMemory(data) => data.len(),
-            UnrolledTracingDataHost::Unified(data) => data.len(),
-        },
-    }
 }
 
 fn free_inits_and_teardowns(
@@ -732,8 +717,8 @@ fn free_inits_and_teardowns(
     }
 }
 
-fn free_tracing_data(tracing_data: TracingDataHost<A>, free_allocators: &Sender<A>) {
-    for allocator in tracing_data.into_allocators() {
+fn free_tracing_data(data: TracingData<A>, free_allocators: &Sender<A>) {
+    for allocator in data.tracing_data.into_allocators() {
         free_allocators.send(allocator).unwrap();
     }
 }

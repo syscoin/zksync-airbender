@@ -88,7 +88,7 @@ impl StageFourOutput {
             vectorized_ldes.push(context.alloc(4 * trace_len, AllocationPlacement::BestFit)?);
         }
         let stream = context.get_exec_stream();
-        let mut quotient_z_pow_challenge = unsafe { context.alloc_host_uninit::<u64>() };
+        let mut quotient_z_pow_challenge = context.alloc_host(0u64)?;
         let quotient_z_pow_bits = security_config.quotient_z_pow_bits;
         search_pow_challenge(
             seed,
@@ -100,9 +100,9 @@ impl StageFourOutput {
             callbacks,
             context,
         )?;
-        let mut values_at_z = unsafe { context.alloc_host_uninit_slice(num_evals) };
+        let mut values_at_z = context.alloc_host_slice(num_evals)?;
         let values_at_z_accessor = values_at_z.get_mut_accessor();
-        let mut h_z = unsafe { context.alloc_host_uninit::<E4>() };
+        let mut h_z = context.alloc_host(E4::default())?;
         let h_z_accessor = h_z.get_mut_accessor();
         let get_z = move || unsafe {
             let num_entries = (if quotient_z_pow_bits == 0 { 0usize } else { 1 } + 1 * 4)
@@ -211,7 +211,7 @@ impl StageFourOutput {
             Transcript::commit_with_seed(seed_accessor.get_mut(), &transcript_input);
         };
         callbacks.schedule(commit_values_at_z, stream)?;
-        let mut deep_poly_alpha_pow_challenge = unsafe { context.alloc_host_uninit::<u64>() };
+        let mut deep_poly_alpha_pow_challenge = context.alloc_host(0u64)?;
         let deep_poly_alpha_pow_bits = security_config.deep_poly_alpha_pow_bits;
         search_pow_challenge(
             seed,
@@ -225,8 +225,13 @@ impl StageFourOutput {
         )?;
         // two challenges: alpha to batch the DEEP terms, and beta for the (1 + beta * x)
         // degree lift applied by the quotient kernel
-        let mut deep_poly_challenges = unsafe { context.alloc_host_uninit::<[E4; 2]>() };
-        let deep_poly_challenges_accessor = deep_poly_challenges.get_mut_accessor();
+        let num_terms_at_z = circuit.num_openings_at_z();
+        let num_terms_at_z_omega = circuit.num_openings_at_z_omega();
+        let num_terms_total = num_terms_at_z + num_terms_at_z_omega;
+        let mut h_challenges = context.alloc_host(<[E4; 2]>::default())?;
+        let mut h_scratch = context.alloc_host_slice(num_terms_total)?;
+        let mut h_sums = context.alloc_host(ChallengesTimesEvalsSums::default())?;
+        let deep_poly_challenges_accessor = h_challenges.get_mut_accessor();
         let get_deep_poly_challenges = move || unsafe {
             let num_entries_from_pow = if deep_poly_alpha_pow_bits == 0 {
                 0usize
@@ -255,14 +260,8 @@ impl StageFourOutput {
             false,
             &stream,
         )?;
-        let num_terms_at_z = circuit.num_openings_at_z();
-        let num_terms_at_z_omega = circuit.num_openings_at_z_omega();
-        let num_terms_total = num_terms_at_z + num_terms_at_z_omega;
-        let mut h_e4_scratch = unsafe { context.alloc_host_uninit_slice(num_terms_total) };
-        let h_e4_scratch_accessor = h_e4_scratch.get_mut_accessor();
-        let mut h_challenges_times_evals =
-            unsafe { context.alloc_host_uninit::<ChallengesTimesEvalsSums>() };
-        let h_challenges_times_evals_accessor = h_challenges_times_evals.get_mut_accessor();
+        let h_e4_scratch_accessor = h_scratch.get_mut_accessor();
+        let h_challenges_times_evals_accessor = h_sums.get_mut_accessor();
         let omega_inv = PRECOMPUTATIONS.omegas_inv[log_domain_size as usize];
         let get_challenges = move || unsafe {
             let [alpha, deep_poly_beta] = *deep_poly_challenges_accessor.get();
@@ -323,7 +322,7 @@ impl StageFourOutput {
         let log_coset_tree_cap_size = log_tree_cap_size - log_lde_factor;
         let log_fold_by = folding_description.folding_sequence[0] as u32;
         let layers_count = log_domain_size + 1 - log_fold_by - log_coset_tree_cap_size;
-        let mut tree_caps = allocate_tree_caps(log_lde_factor, log_tree_cap_size, context);
+        let mut tree_caps = allocate_tree_caps(log_lde_factor, log_tree_cap_size, context)?;
         for (((vectorized_lde, lde), tree), caps) in vectorized_ldes
             .iter()
             .zip_eq(match &mut trace_holder.cosets {

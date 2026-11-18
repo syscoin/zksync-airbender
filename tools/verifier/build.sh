@@ -58,7 +58,7 @@ build_artifacts() {
 
   # Each artifact has its own target directory to not collide with each other, allowing parallel building & reproducible builds.
   local artifact_target_dir="target/${name}"
-  local objcopy_args=(-Z build-std=core,panic_abort,alloc --features "${features}" --no-default-features)
+  local objcopy_args=(--locked -Z build-std=core,panic_abort,alloc --features "${features}" --no-default-features)
 
   CARGO_TARGET_DIR="$artifact_target_dir" cargo objcopy --release "${objcopy_args[@]}" -- -O binary "${name}.bin"
   CARGO_TARGET_DIR="$artifact_target_dir" cargo objcopy --release "${objcopy_args[@]}" -- -R .text "${name}.elf"
@@ -71,10 +71,17 @@ for artifact in "${artifact_names[@]}"; do
 done
 
 # 2) Build artifacts
+build_pids=()
 for artifact in "${artifact_names[@]}"; do
   features="$(detect_features "$artifact")"
   # Build in parallel.
   ( build_artifacts "$features" "$artifact" ) &
+  build_pids+=("$!")
 done
 
-wait
+# A bare wait reports success even when a background build failed.
+status=0
+for pid in "${build_pids[@]}"; do
+  wait "$pid" || status=1
+done
+exit "$status"

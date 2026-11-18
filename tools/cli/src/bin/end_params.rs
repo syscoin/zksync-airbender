@@ -1,7 +1,9 @@
 //! Prints the base-program end_params and the expected recursion chain (base -> unrolled ->
 //! unified) for a given app binary, for embedding in downstream verifiers.
 
-use execution_utils::setups::{binary_u8_to_u32, pad_bytecode_bytes_for_proving, read_binary};
+use clap::Parser;
+use cli_lib::prover_utils::SecurityLevel;
+use execution_utils::setups::{pad_bytecode_bytes_for_proving, read_binary};
 use execution_utils::unified_circuit::compute_unified_setup_for_machine_configuration;
 use execution_utils::unrolled::{compute_setup_for_machine_configuration, UnrolledProgramSetup};
 use execution_utils::verifier_binaries::recursion_artifact;
@@ -9,8 +11,15 @@ use execution_utils::{RecursionArtifact, RecursionLayer};
 use riscv_transpiler::cycle::{
     IMStandardIsaConfigWithUnsignedMulDiv, IWithoutByteAccessIsaConfigWithDelegation,
 };
-use std::path::Path;
-use verifier_common::SecurityModel;
+use std::path::PathBuf;
+
+#[derive(Parser)]
+struct Args {
+    bin_path: PathBuf,
+    text_path: PathBuf,
+    #[arg(long, value_enum, default_value = "80")]
+    security_level: SecurityLevel,
+}
 
 fn padded(bytes: &[u8]) -> Vec<u8> {
     let mut padded = bytes.to_vec();
@@ -19,12 +28,12 @@ fn padded(bytes: &[u8]) -> Vec<u8> {
 }
 
 fn main() {
-    let mut args = std::env::args().skip(1);
-    let bin_path = args.next().expect("usage: end_params <app.bin> <app.text>");
-    let text_path = args.next().expect("usage: end_params <app.bin> <app.text>");
+    let args = Args::parse();
+    let security = args.security_level.model();
+    eprintln!("recursion security model: {security:?}");
 
-    let (bin_bytes, _) = read_binary(Path::new(&bin_path));
-    let (text_bytes, _) = read_binary(Path::new(&text_path));
+    let (bin_bytes, _) = read_binary(&args.bin_path);
+    let (text_bytes, _) = read_binary(&args.text_path);
 
     eprintln!("computing base setup (app program)...");
     let base_setup = compute_setup_for_machine_configuration::<IMStandardIsaConfigWithUnsignedMulDiv>(
@@ -35,8 +44,6 @@ fn main() {
     let (base_chain, base_preimage) =
         UnrolledProgramSetup::begin_recursion_chain(&base_setup.end_params);
     println!("base_chain = {base_chain:?}");
-
-    let security = SecurityModel::Security80;
 
     eprintln!("computing unrolled recursion setup...");
     let unrolled_bin =
@@ -68,7 +75,4 @@ fn main() {
         &unrolled_preimage,
     );
     println!("unified_chain (expected registers[8..16]) = {unified_chain:?}");
-
-    // Silence unused warnings if layouts are ever needed.
-    let _ = binary_u8_to_u32(&bin_bytes);
 }

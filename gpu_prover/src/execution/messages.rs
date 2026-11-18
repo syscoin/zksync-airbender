@@ -1,5 +1,6 @@
 use crate::circuit_type::CircuitType;
 use crate::execution::precomputations::CircuitPrecomputations;
+use crate::execution::tracing::PendingTracingData;
 use crate::execution::A;
 use crate::prover::tracing_data::TracingDataHost;
 use crate::witness::trace_unrolled::ShuffleRamInitsAndTeardownsHost;
@@ -21,7 +22,7 @@ pub struct InitsAndTeardownsData<A: GoodAllocator> {
 pub struct TracingData<A: GoodAllocator> {
     pub circuit_type: CircuitType,
     pub sequence_id: usize,
-    pub tracing_data: TracingDataHost<A>,
+    pub(crate) tracing_data: Box<dyn PendingTracingData<A>>,
     pub participating_snapshot_indexes: BTreeSet<usize>,
 }
 

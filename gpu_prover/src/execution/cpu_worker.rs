@@ -1,15 +1,17 @@
+use super::simulator_memory::SimulatorMemoryHolder;
 use super::A;
 use crate::circuit_type::{CircuitType, UnrolledCircuitType};
 use crate::execution::messages::SimulationResult;
 use crate::execution::messages::{InitsAndTeardownsData, WorkerResult};
 use crate::execution::simulation_runner::{
-    LockedBoxedMemoryHolder, LockedBoxedTraceChunk, SimulationRunner, Snapshot,
+    EmptyInitsAndTeardownsStreamer, LockedBoxedTraceChunk, SimulationRunner, Snapshot,
 };
 use crate::execution::tracing::{Tracer, TracingType};
 use crate::machine_type::MachineType;
 use crate::witness::trace_unrolled::ShuffleRamInitsAndTeardownsHost;
 use crossbeam_channel::{Receiver, Sender};
 use cs::definitions::TimestampData;
+use fft::GoodAllocator;
 use itertools::Itertools;
 use log::{debug, trace};
 use prover::common_constants;
@@ -38,7 +40,7 @@ pub(crate) fn run_simulator<
     text_section: impl Deref<Target = impl Deref<Target = [u32]>>,
     cycles_bound: Option<u32>,
     jit_cache: Arc<Mutex<TypeMap>>,
-    memory_holder: &mut LockedBoxedMemoryHolder,
+    memory_holder: &mut SimulatorMemoryHolder,
     non_determinism: Arc<Mutex<Option<ND>>>,
     free_trace_chunks_sender: Sender<LockedBoxedTraceChunk>,
     free_trace_chunks_receiver: Receiver<LockedBoxedTraceChunk>,
@@ -50,11 +52,11 @@ pub(crate) fn run_simulator<
     ram_config: JitRunnerRam,
 ) {
     assert_ne!(ram_config, JitRunnerRam::UninitPlaceholder);
-    assert_eq!(ram_config.ram_size(), memory_holder.holder.ram_size());
+    assert_eq!(ram_config.ram_size(), memory_holder.ram_size());
     trace!("BATCH[{batch_id}] SIMULATOR started");
     let mut non_determinism_guard = non_determinism.lock().unwrap();
     let non_determinism_source = non_determinism_guard.take().unwrap();
-    let runner = SimulationRunner::<_, T>::new(
+    let mut runner = SimulationRunner::<_, T>::new(
         batch_id,
         machine_type,
         non_determinism_source,
@@ -66,6 +68,13 @@ pub(crate) fn run_simulator<
         abort,
         ram_config,
     );
+    // Collection can emit at most one teardown per addressable RAM word.
+    runner.empty_it_streamer = (!T::IS_SPLIT).then(|| {
+        EmptyInitsAndTeardownsStreamer::new(
+            memory_holder.ram_size() / size_of::<u32>(),
+            setups::unified_reduced_machine::NUM_CYCLES,
+        )
+    });
     let runner = runner.run(
         binary_image,
         text_section,
@@ -80,6 +89,7 @@ pub(crate) fn run_simulator<
         abort,
         state,
         is_aborted,
+        empty_it_streamer,
         ..
     } = runner;
     *non_determinism_guard = Some(non_determinism_source);
@@ -105,7 +115,8 @@ pub(crate) fn run_simulator<
             let total_cycles = (timestamp_diff / TIMESTAMP_STEP) as usize;
             let empty_cycles = total_cycles - count;
             let empty_circuits = empty_cycles / per_circuit_count;
-            for sequence_id in 0..empty_circuits {
+            let remaining_empty = empty_it_streamer.unwrap().finish(empty_circuits);
+            for sequence_id in remaining_empty {
                 let data = InitsAndTeardownsData {
                     circuit_type: CircuitType::Unrolled(UnrolledCircuitType::Unified),
                     sequence_id,
@@ -121,9 +132,13 @@ pub(crate) fn run_simulator<
             )
         };
         let circuit_type = CircuitType::Unrolled(circuit_type);
-        for (sequence_id, inits_and_teardowns_data) in
-            get_inits_and_teardowns_chunks(inits_and_teardowns, per_circuit_count, free_allocators)
-                .enumerate()
+        for (sequence_id, inits_and_teardowns_data) in get_inits_and_teardowns_chunks(
+            inits_and_teardowns,
+            per_circuit_count,
+            free_allocators,
+            A::capacity,
+        )
+        .enumerate()
         {
             let sequence_id = sequence_id + sequence_id_offset;
             let count = inits_and_teardowns_data
@@ -162,7 +177,7 @@ pub(crate) fn run_simulator<
         results.send(result).unwrap();
     } else {
         trace!("BATCH[{batch_id}] SIMULATOR resetting memory due to abort");
-        MemoryHolder::reset(&mut memory_holder.holder);
+        memory_holder.reset_after_abort();
     }
     trace!("BATCH[{batch_id}] SIMULATOR finished");
 }
@@ -220,7 +235,7 @@ pub(crate) fn run_replayer<T: TracingType>(
             &mut tracer,
         );
         let elapsed = instant.elapsed();
-        drop(tracer);
+        tracer.finish();
         free_trace_chunks.send(trace).unwrap();
         assert_eq!(state.pc, final_state.pc);
         assert_eq!(state.timestamp, final_state.timestamp);
@@ -298,11 +313,12 @@ pub(super) fn collect_inits_and_teardowns(
     chunks
 }
 
-pub(super) fn get_inits_and_teardowns_chunks(
+pub(super) fn get_inits_and_teardowns_chunks<Alloc: GoodAllocator>(
     values: Vec<Vec<LazyInitAndTeardown>>,
     partition_size: usize,
-    free_allocators: Receiver<A>,
-) -> impl Iterator<Item = ShuffleRamInitsAndTeardownsHost<A>> {
+    free_allocators: Receiver<Alloc>,
+    allocation_bytes: impl Fn(&Alloc) -> usize,
+) -> impl Iterator<Item = ShuffleRamInitsAndTeardownsHost<Alloc>> {
     let inits_and_teardowns_count = values.iter().map(|v| v.len()).sum::<usize>();
     let mut iterator = values.into_iter().flat_map(|v| v.into_iter());
     let partitions_count = inits_and_teardowns_count.div_ceil(partition_size);
@@ -315,18 +331,67 @@ pub(super) fn get_inits_and_teardowns_chunks(
         let mut chunks = vec![];
         while values_count != 0 {
             let allocator = free_allocators.recv().unwrap();
-            let capacity = allocator.capacity() / size_of::<LazyInitAndTeardown>();
+            let capacity = allocation_bytes(&allocator) / size_of::<LazyInitAndTeardown>();
+            assert!(
+                capacity > 0,
+                "allocator cannot hold a RAM init/teardown row"
+            );
             let count = min(capacity, values_count);
             let mut chunk = Vec::with_capacity_in(count, allocator);
-            unsafe {
-                chunk.set_len(count);
-                for i in 0..count {
-                    *chunk.get_unchecked_mut(i) = iterator.next().unwrap_unchecked();
-                }
-            };
+            for _ in 0..count {
+                chunk.push(
+                    iterator
+                        .next()
+                        .expect("counted RAM init and teardown values"),
+                );
+            }
             chunks.push(Arc::new(chunk));
             values_count -= count;
         }
         ShuffleRamInitsAndTeardownsHost { chunks }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::alloc::Global;
+
+    #[test]
+    fn teardown_chunks_preserve_order_across_partitions_and_allocators() {
+        let chunk_capacity = 4;
+        let allocation_bytes = chunk_capacity * size_of::<LazyInitAndTeardown>();
+        let expected: Vec<_> = (0..(2 * chunk_capacity + 1))
+            .map(|index| LazyInitAndTeardown {
+                address: (4 * index) as u32,
+                teardown_value: (index + 7) as u32,
+                teardown_timestamp: TimestampData::from_scalar((index + 1) as u64),
+            })
+            .collect();
+        let (sender, receiver) = crossbeam_channel::bounded(3);
+        for _ in 0..3 {
+            sender.send(Global).unwrap();
+        }
+        drop(sender);
+
+        let chunks: Vec<_> = get_inits_and_teardowns_chunks(
+            vec![expected[..1].to_vec(), expected[1..].to_vec()],
+            chunk_capacity + 1,
+            receiver,
+            |_| allocation_bytes,
+        )
+        .collect();
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].chunks.len(), 1);
+        assert_eq!(chunks[1].chunks.len(), 2);
+        assert_eq!(chunks[0].chunks[0].as_slice(), &expected[..chunk_capacity]);
+        assert_eq!(
+            chunks[1].chunks[0].as_slice(),
+            &expected[chunk_capacity..2 * chunk_capacity]
+        );
+        assert_eq!(
+            chunks[1].chunks[1].as_slice(),
+            &expected[2 * chunk_capacity..]
+        );
+    }
 }

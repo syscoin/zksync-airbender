@@ -1,0 +1,37 @@
+name: V2 affine regressions
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  affine-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Load the toolchain pinned in rust-toolchain.toml
+        run: rustup show active-toolchain
+      - name: Check field identities, terminal folding and honest proof acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The Airbender workspace omits its root lockfile. Resolve once for all three targets.
+          cargo generate-lockfile
+          check_tests() {
+            local count=$1
+            shift
+            cargo test --locked "$@" | tee "$RUNNER_TEMP/affine-tests.log"
+            grep -Fq "test result: ok. $count passed; 0 failed; 0 ignored;" "$RUNNER_TEMP/affine-tests.log"
+          }
+          check_tests 5 -p field --test deep_affine_degree
+          check_tests 3 -p verifier_common --test v32_affine_terminal
+          check_tests 1 -p full_statement_verifier --no-default-features --features unified_verifier_only_security_100,replace_csr --test security100_delegation verify_honest_security100_delegation -- --exact

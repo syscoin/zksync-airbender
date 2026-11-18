@@ -52,7 +52,6 @@ pub type ConcreteProofPublicInputs = ProofPublicInputs<NUM_STATE_ELEMENTS>;
 #[cfg(test)]
 mod tests;
 
-#[allow(invalid_value)]
 #[allow(unreachable_code)]
 #[inline(always)]
 pub unsafe fn verify_80(
@@ -72,7 +71,6 @@ pub unsafe fn verify_80(
     >(proof_state_dst, proof_input_dst)
 }
 
-#[allow(invalid_value)]
 #[allow(unreachable_code)]
 #[inline(always)]
 pub unsafe fn verify_100(
@@ -98,7 +96,6 @@ pub unsafe fn verify_100(
 /// the function assumes that it runs as a part of the chain of proofs of the same "flavour", and enforces some invariants.
 /// It is designed to be run within riscV environment (it loads the proofs from the CSR).
 // If you want to run it outside of riscV environment, make sure to set `verifier_in_rust` feature flag.
-#[allow(invalid_value)]
 #[allow(unreachable_code)]
 #[inline(never)]
 pub unsafe fn verify_with_configuration<
@@ -132,22 +129,19 @@ pub unsafe fn verify_with_configuration<
 
     let mut leaf_inclusion_verifier = V::new();
 
-    let mut skeleton = MaybeUninit::<ProofSkeletonInstance<S>>::uninit().assume_init();
-    <ProofSkeletonInstance<S> as ProofSkeletonInstanceExt<S>>::fill::<I>((&mut skeleton) as *mut _);
-    // let skeleton = skeleton.assume_init();
+    let mut skeleton = MaybeUninit::<ProofSkeletonInstance<S>>::uninit();
+    <ProofSkeletonInstance<S> as ProofSkeletonInstanceExt<S>>::fill::<I>(skeleton.as_mut_ptr());
+    // SAFETY: fill writes every non-padding word. The explicit padding is MaybeUninit<u32>.
+    let skeleton = skeleton.assume_init_ref();
 
-    let mut queries =
-        MaybeUninit::<[QueryValuesInstance<S>; Geometry::<S>::NUM_QUERIES]>::uninit().assume_init();
+    let mut queries = MaybeUninit::<[QueryValuesInstance<S>; Geometry::<S>::NUM_QUERIES]>::uninit();
     <QueryValuesInstance<S> as QueryValuesInstanceExt<S>>::fill_array::<
         I,
         V,
         { Geometry::<S>::NUM_QUERIES },
-    >(
-        (&mut queries) as *mut _,
-        &skeleton,
-        &mut leaf_inclusion_verifier,
-    );
-    // let queries = queries.assume_init();
+    >(queries.as_mut_ptr(), skeleton, &mut leaf_inclusion_verifier);
+    // SAFETY: fill_array returned after filling every query index and all its leaf words.
+    let queries = queries.assume_init_ref();
 
     // now drive the transcript and continue
     let mut transcript_hasher = blake2s_u32::DelegatedBlake2sState::new();
@@ -166,9 +160,7 @@ pub unsafe fn verify_with_configuration<
     }
 
     // draw local lookup argument challenges
-    let mut transcript_challenges =
-        MaybeUninit::<[u32; Geometry::<S>::LOOKUP_TRANSCRIPT_CHALLENGE_ARRAY_SIZE]>::uninit()
-            .assume_init();
+    let mut transcript_challenges = [0u32; Geometry::<S>::LOOKUP_TRANSCRIPT_CHALLENGE_ARRAY_SIZE];
     Transcript::draw_randomness_using_hasher(
         &mut transcript_hasher,
         &mut seed,
@@ -243,10 +235,8 @@ pub unsafe fn verify_with_configuration<
     }
 
     // draw quotient linearization challenges
-    let mut transcript_challenges = MaybeUninit::<
-        [u32; Geometry::<S>::QUOTIENT_ALPHA_TRANSCRIPT_CHALLENGE_ARRAY_SIZE],
-    >::uninit()
-    .assume_init();
+    let mut transcript_challenges =
+        [0u32; Geometry::<S>::QUOTIENT_ALPHA_TRANSCRIPT_CHALLENGE_ARRAY_SIZE];
     Transcript::draw_randomness_using_hasher(
         &mut transcript_hasher,
         &mut seed,
@@ -290,8 +280,7 @@ pub unsafe fn verify_with_configuration<
 
     // draw DEEP poly linearization challenge
     let mut transcript_challenges =
-        MaybeUninit::<[u32; Geometry::<S>::QUOTIENT_Z_TRANSCRIPT_CHALLENGE_ARRAY_SIZE]>::uninit()
-            .assume_init();
+        [0u32; Geometry::<S>::QUOTIENT_Z_TRANSCRIPT_CHALLENGE_ARRAY_SIZE];
     Transcript::draw_randomness_using_hasher(
         &mut transcript_hasher,
         &mut seed,
@@ -328,10 +317,8 @@ pub unsafe fn verify_with_configuration<
     }
 
     // draw initial challenges for DEEP-poly
-    let mut transcript_challenges = MaybeUninit::<
-        [u32; Geometry::<S>::DEEP_POLY_ALPHA_TRANSCRIPT_CHALLENGE_ARRAY_SIZE],
-    >::uninit()
-    .assume_init();
+    let mut transcript_challenges =
+        [0u32; Geometry::<S>::DEEP_POLY_ALPHA_TRANSCRIPT_CHALLENGE_ARRAY_SIZE];
     Transcript::draw_randomness_using_hasher(
         &mut transcript_hasher,
         &mut seed,
@@ -359,9 +346,8 @@ pub unsafe fn verify_with_configuration<
     );
 
     // now we should draw challenges and commit FRI oracles
-    #[allow(invalid_value)]
     let mut fri_folding_challenges: [Mersenne31Quartic; NUM_FRI_STEPS] =
-        [MaybeUninit::uninit().assume_init(); NUM_FRI_STEPS];
+        [Mersenne31Quartic::ZERO; NUM_FRI_STEPS];
 
     for (((caps, challenge), pow_challenge), pow_bits) in skeleton
         .transcript_elements_fri_intermediate_oracles()
@@ -380,10 +366,8 @@ pub unsafe fn verify_with_configuration<
                 pow_bits,
             );
 
-            let mut transcript_challenges = MaybeUninit::<
-                [u32; (1usize * 4 + 1).next_multiple_of(BLAKE2S_DIGEST_SIZE_U32_WORDS)],
-            >::uninit()
-            .assume_init();
+            let mut transcript_challenges =
+                [0u32; (1usize * 4 + 1).next_multiple_of(BLAKE2S_DIGEST_SIZE_U32_WORDS)];
 
             Transcript::draw_randomness_using_hasher(
                 &mut transcript_hasher,
@@ -399,10 +383,8 @@ pub unsafe fn verify_with_configuration<
                     .map(|el| Mersenne31Field::from_nonreduced_u32(el)),
             )
         } else {
-            let mut transcript_challenges = MaybeUninit::<
-                [u32; (1usize * 4).next_multiple_of(BLAKE2S_DIGEST_SIZE_U32_WORDS)],
-            >::uninit()
-            .assume_init();
+            let mut transcript_challenges =
+                [0u32; (1usize * 4).next_multiple_of(BLAKE2S_DIGEST_SIZE_U32_WORDS)];
 
             Transcript::draw_randomness_using_hasher(
                 &mut transcript_hasher,
@@ -438,10 +420,8 @@ pub unsafe fn verify_with_configuration<
         }
 
         // draw initial challenge for DEEP-poly
-        let mut transcript_challenges = MaybeUninit::<
-            [u32; Geometry::<S>::LAST_FRI_FOLDING_TRANSCRIPT_CHALLENGE_ARRAY_SIZE],
-        >::uninit()
-        .assume_init();
+        let mut transcript_challenges =
+            [0u32; Geometry::<S>::LAST_FRI_FOLDING_TRANSCRIPT_CHALLENGE_ARRAY_SIZE];
         Transcript::draw_randomness_using_hasher(
             &mut transcript_hasher,
             &mut seed,
@@ -479,8 +459,7 @@ pub unsafe fn verify_with_configuration<
 
     // now we need to draw enough bits to form query indexes
     let mut indexes_bits: [u32; Geometry::<S>::NUM_REQUIRED_WORDS_FOR_QUERY_INDEXES] =
-        MaybeUninit::<[u32; Geometry::<S>::NUM_REQUIRED_WORDS_FOR_QUERY_INDEXES]>::uninit()
-            .assume_init();
+        [0u32; Geometry::<S>::NUM_REQUIRED_WORDS_FOR_QUERY_INDEXES];
     Transcript::draw_randomness_using_hasher(&mut transcript_hasher, &mut seed, &mut indexes_bits);
 
     // NOTE: when we will use queries below, we MUST check that query set's index is exactly the index we draw from transcript.
@@ -524,9 +503,12 @@ pub unsafe fn verify_with_configuration<
         assert_eq!(rest.len(), 1);
         let quotient_opening = rest[0];
 
-        let mut witness_next_row: [_; NUM_WITNESS_OPENINGS] = MaybeUninit::uninit().assume_init();
-        let mut memory_next_row: [_; NUM_MEMORY_OPENINGS] = MaybeUninit::uninit().assume_init();
-        let mut stage_2_next_row: [_; NUM_STAGE2_OPENINGS] = MaybeUninit::uninit().assume_init();
+        let mut witness_next_row: [_; NUM_WITNESS_OPENINGS] =
+            [Mersenne31Quartic::ZERO; NUM_WITNESS_OPENINGS];
+        let mut memory_next_row: [_; NUM_MEMORY_OPENINGS] =
+            [Mersenne31Quartic::ZERO; NUM_MEMORY_OPENINGS];
+        let mut stage_2_next_row: [_; NUM_STAGE2_OPENINGS] =
+            [Mersenne31Quartic::ZERO; NUM_STAGE2_OPENINGS];
 
         // we only need to update very few places here, so we will overwrite them below
 
@@ -735,19 +717,19 @@ pub unsafe fn verify_with_configuration<
         // So we can precompute \sum_i alpha^i f(z) that doesn't change
 
         let mut powers_of_deep_quotient_challenge =
-            [MaybeUninit::uninit().assume_init(); NUM_OPENINGS_AT_Z + NUM_OPENINGS_AT_Z_OMEGA];
-        let mut extra_factor_for_accumulation_at_z_omega = MaybeUninit::uninit().assume_init();
+            [Mersenne31Quartic::ZERO; NUM_OPENINGS_AT_Z + NUM_OPENINGS_AT_Z_OMEGA];
+        let mut extra_factor_for_accumulation_at_z_omega = Mersenne31Quartic::ZERO;
 
         let (precompute_with_evals_at_z, precompute_with_evals_at_z_omega) =
             if Mersenne31Quartic::PREFER_FMA {
                 precompute_for_consistency_checks_with_fma(
-                    &skeleton,
+                    skeleton,
                     &deep_poly_alpha,
                     &mut extra_factor_for_accumulation_at_z_omega,
                 )
             } else {
                 precompute_for_consistency_checks(
-                    &skeleton,
+                    skeleton,
                     &deep_poly_alpha,
                     &mut powers_of_deep_quotient_challenge,
                 )
@@ -758,22 +740,20 @@ pub unsafe fn verify_with_configuration<
         let tau_inv =
             Mersenne31Complex::TWO_ADICITY_GENERATORS_INVERSED[TRACE_LEN_LOG2 + FRI_FACTOR_LOG2];
 
-        let mut taus = [MaybeUninit::uninit().assume_init(); 1 << FRI_FACTOR_LOG2];
+        let mut taus = [Mersenne31Complex::ZERO; 1 << FRI_FACTOR_LOG2];
         taus[0] = Mersenne31Complex::ONE;
         taus[1] = tau;
 
-        let mut taus_inversed = [MaybeUninit::uninit().assume_init(); 1 << FRI_FACTOR_LOG2];
+        let mut taus_inversed = [Mersenne31Complex::ZERO; 1 << FRI_FACTOR_LOG2];
         taus_inversed[0] = Mersenne31Complex::ONE;
         taus_inversed[1] = tau_inv;
 
-        let mut taus_in_domain_by_half =
-            [MaybeUninit::uninit().assume_init(); 1 << FRI_FACTOR_LOG2];
+        let mut taus_in_domain_by_half = [Mersenne31Complex::ZERO; 1 << FRI_FACTOR_LOG2];
         taus_in_domain_by_half[0] = Mersenne31Complex::ONE;
         taus_in_domain_by_half[1] = Mersenne31Complex::TWO_ADICITY_GENERATORS
             [TRACE_LEN_LOG2 + FRI_FACTOR_LOG2 - (TRACE_LEN_LOG2 - 1)];
 
-        let mut taus_in_domain_by_half_inversed =
-            [MaybeUninit::uninit().assume_init(); 1 << FRI_FACTOR_LOG2];
+        let mut taus_in_domain_by_half_inversed = [Mersenne31Complex::ZERO; 1 << FRI_FACTOR_LOG2];
         taus_in_domain_by_half_inversed[0] = Mersenne31Complex::ONE;
         taus_in_domain_by_half_inversed[1] = Mersenne31Complex::TWO_ADICITY_GENERATORS_INVERSED
             [TRACE_LEN_LOG2 + FRI_FACTOR_LOG2 - (TRACE_LEN_LOG2 - 1)];
@@ -783,8 +763,8 @@ pub unsafe fn verify_with_configuration<
             && Mersenne31Quartic::USE_SPEC_MUL_BY_BASE_VIA_MUL_BY_SELF
             && Mersenne31Quartic::CAN_PROJECT_FROM_BASE
         {
-            // it'll be unused
-            MaybeUninit::uninit().assume_init()
+            // The FMA folding path uses pre-scaled roots.
+            [[Mersenne31Quartic::ZERO; 5]; NUM_FRI_STEPS]
         } else {
             fri_folding_challenges.map(|el| {
                 let mut squared = el;

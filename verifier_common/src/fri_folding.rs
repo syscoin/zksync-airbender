@@ -1,8 +1,5 @@
-use core::mem::MaybeUninit;
-
 use field::{Field, FieldExtension, Mersenne31Complex, Mersenne31Field, Mersenne31Quartic};
 
-#[allow(invalid_value)]
 pub unsafe fn fri_fold_by_log_n<const FOLDING_DEGREE_LOG2: usize>(
     expected_value: &mut Mersenne31Quartic,
     evaluation_point: &mut Mersenne31Complex,
@@ -28,8 +25,7 @@ pub unsafe fn fri_fold_by_log_n<const FOLDING_DEGREE_LOG2: usize>(
     *domain_size_log_2 -= FOLDING_DEGREE_LOG2;
 
     // here we use worst-case sizes
-    let mut leaf_parsed =
-        MaybeUninit::<[Mersenne31Quartic; MAX_SIZE_FOR_LEAF]>::uninit().assume_init();
+    let mut leaf_parsed = [Mersenne31Quartic::ZERO; MAX_SIZE_FOR_LEAF];
     if core::mem::align_of::<Mersenne31Quartic>() != core::mem::align_of::<Mersenne31Field>() {
         let mut it = leaf.as_chunks::<4>().0.iter();
         for i in 0..(1 << FOLDING_DEGREE_LOG2) {
@@ -56,18 +52,15 @@ pub unsafe fn fri_fold_by_log_n<const FOLDING_DEGREE_LOG2: usize>(
     let mut evaluation_point_shared_factor = generator_inv.pow(shared_bits_in_folding as u32);
     evaluation_point_shared_factor.mul_assign(&*offset_inv);
     // again - worst case size
-    let mut folding_evals_points_inversed =
-        MaybeUninit::<[Mersenne31Complex; MAX_SIZE_FOR_ROOTS]>::uninit().assume_init();
+    let mut folding_evals_points_inversed = [Mersenne31Complex::ZERO; MAX_SIZE_FOR_ROOTS];
     for i in 0..(1 << (FOLDING_DEGREE_LOG2 - 1)) {
         let mut t = *shared_factors_for_folding.get_unchecked(i);
         t.mul_assign(&evaluation_point_shared_factor);
         *folding_evals_points_inversed.get_unchecked_mut(i) = t;
     }
 
-    let mut buffer_0 =
-        MaybeUninit::<[Mersenne31Quartic; MAX_SIZE_FOR_LEAF]>::uninit().assume_init();
-    let mut buffer_1 =
-        MaybeUninit::<[Mersenne31Quartic; MAX_SIZE_FOR_LEAF]>::uninit().assume_init();
+    let mut buffer_0 = [Mersenne31Quartic::ZERO; MAX_SIZE_FOR_LEAF];
+    let mut buffer_1 = [Mersenne31Quartic::ZERO; MAX_SIZE_FOR_LEAF];
 
     for round in 0..FOLDING_DEGREE_LOG2 {
         let roots_stride = 1 << round;
@@ -151,7 +144,6 @@ pub unsafe fn fri_fold_by_log_n<const FOLDING_DEGREE_LOG2: usize>(
     *domain_index = shared_bits_in_folding;
 }
 
-#[allow(invalid_value)]
 pub unsafe fn fri_fold_by_log_n_with_fma<const FOLDING_DEGREE_LOG2: usize>(
     expected_value: &mut Mersenne31Quartic,
     evaluation_point: &mut Mersenne31Complex,
@@ -200,8 +192,7 @@ pub unsafe fn fri_fold_by_log_n_with_fma<const FOLDING_DEGREE_LOG2: usize>(
         generator_inv.pow_with_fma(shared_bits_in_folding as u32);
     evaluation_point_shared_factor.mul_assign_by_base(&*offset_inv);
     // again - worst case size
-    let mut folding_evals_points_inversed =
-        MaybeUninit::<[Mersenne31Quartic; MAX_SIZE_FOR_ROOTS]>::uninit().assume_init();
+    let mut folding_evals_points_inversed = [Mersenne31Quartic::ZERO; MAX_SIZE_FOR_ROOTS];
     for i in 0..(1 << (FOLDING_DEGREE_LOG2 - 1)) {
         let mut t = evaluation_point_shared_factor;
         let shared_factor =
@@ -211,10 +202,8 @@ pub unsafe fn fri_fold_by_log_n_with_fma<const FOLDING_DEGREE_LOG2: usize>(
         *folding_evals_points_inversed.get_unchecked_mut(i) = t;
     }
 
-    let mut buffer_0 =
-        MaybeUninit::<[Mersenne31Quartic; MAX_SIZE_FOR_LEAF]>::uninit().assume_init();
-    let mut buffer_1 =
-        MaybeUninit::<[Mersenne31Quartic; MAX_SIZE_FOR_LEAF]>::uninit().assume_init();
+    let mut buffer_0 = [Mersenne31Quartic::ZERO; MAX_SIZE_FOR_LEAF];
+    let mut buffer_1 = [Mersenne31Quartic::ZERO; MAX_SIZE_FOR_LEAF];
 
     for round in 0..FOLDING_DEGREE_LOG2 {
         // NOTE: we will only access roots at particular stride, but also we will only

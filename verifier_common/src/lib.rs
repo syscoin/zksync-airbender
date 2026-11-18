@@ -111,11 +111,9 @@ pub struct SizedProofPowChallenges<const NUM_FOLDINGS: usize> {
     pub fri_queries_pow_challenge: u64,
 }
 
-use core::mem::MaybeUninit;
-
 extern crate alloc;
 
-use field::{Mersenne31Field, Mersenne31Quartic};
+use field::{Field, Mersenne31Field, Mersenne31Quartic};
 use prover::definitions::*;
 
 pub use blake2s_u32;
@@ -243,6 +241,23 @@ impl<
         NUM_MACHINE_STATE_CHALLENGES,
     >
 {
+    /// Scratch output for a circuit verifier that takes an initialized mutable reference.
+    pub fn empty() -> Self {
+        Self {
+            setup_caps: [MerkleTreeCap::dummy(); NUM_COSETS],
+            memory_caps: [MerkleTreeCap::dummy(); NUM_COSETS],
+            memory_challenges: Default::default(),
+            delegation_challenges: [Default::default(); NUM_DELEGATION_CHALLENGES],
+            machine_state_permutation_challenges: [Default::default();
+                NUM_MACHINE_STATE_CHALLENGES],
+            lazy_init_boundary_values: [Default::default(); NUM_AUX_BOUNDARY_VALUES],
+            grand_product_accumulator: Mersenne31Quartic::ZERO,
+            delegation_argument_accumulator: [Mersenne31Quartic::ZERO; NUM_DELEGATION_CHALLENGES],
+            circuit_sequence: 0,
+            delegation_type: 0,
+        }
+    }
+
     pub fn setup_caps_flattened(&'_ self) -> &'_ [u32] {
         unsafe {
             core::slice::from_ptr_range(
@@ -278,11 +293,9 @@ pub struct ProofPublicInputs<const NUM_STATE_ELEMENTS: usize> {
 
 impl<const NUM_STATE_ELEMENTS: usize> ProofPublicInputs<NUM_STATE_ELEMENTS> {
     pub fn uninit() -> Self {
-        unsafe {
-            Self {
-                input_state_variables: MaybeUninit::uninit().assume_init(),
-                output_state_variables: MaybeUninit::uninit().assume_init(),
-            }
+        Self {
+            input_state_variables: [Mersenne31Field::ZERO; NUM_STATE_ELEMENTS],
+            output_state_variables: [Mersenne31Field::ZERO; NUM_STATE_ELEMENTS],
         }
     }
 }

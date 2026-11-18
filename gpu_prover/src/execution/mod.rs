@@ -12,3 +12,5 @@ mod simulation_runner;
 mod tracing;
 
 pub(crate) type A = ConcurrentStaticHostAllocator;
+
+mod simulator_memory;

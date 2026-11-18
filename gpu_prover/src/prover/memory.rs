@@ -1,5 +1,5 @@
 use super::callbacks::Callbacks;
-use super::context::{ProverContext, UnsafeMutAccessor};
+use super::context::ProverContext;
 use super::trace_holder::{get_tree_caps, CosetsCacheMode, TraceHolder, TreesCacheMode};
 use super::tracing_data::{
     DelegationTracingDataDevice, InitsAndTeardownsTransfer, TracingDataDevice, TracingDataTransfer,
@@ -20,11 +20,12 @@ use era_cudart::result::CudaResult;
 use era_cudart::slice::DeviceSlice;
 use fft::GoodAllocator;
 use prover::merkle_trees::MerkleTreeCapVarLength;
+use std::sync::{Arc, Mutex};
 
 pub struct MemoryCommitmentJob<'a> {
     is_finished_event: CudaEvent,
     callbacks: Callbacks<'a>,
-    tree_caps: Box<Option<Vec<MerkleTreeCapVarLength>>>,
+    tree_caps: Arc<Mutex<Option<Vec<MerkleTreeCapVarLength>>>>,
     range: device_tracing::Range<'a>,
 }
 
@@ -42,7 +43,11 @@ impl<'a> MemoryCommitmentJob<'a> {
         } = self;
         is_finished_event.synchronize()?;
         drop(callbacks);
-        let tree_caps = tree_caps.unwrap();
+        let tree_caps = tree_caps
+            .lock()
+            .unwrap()
+            .take()
+            .expect("tree cap callback completed");
         let commitment_time_ms = range.elapsed()?;
         Ok((tree_caps, commitment_time_ms))
     }
@@ -198,14 +203,12 @@ pub(crate) fn commit_memory<'a, A: GoodAllocator>(
     drop(evaluations);
     memory_holder.make_evaluations_sum_to_zero_extend_and_commit(context)?;
     let src_tree_cap_accessors = memory_holder.get_tree_caps_accessors();
-    let mut tree_caps = Box::new(None);
-    let dst_tree_caps_accessor = UnsafeMutAccessor::new(tree_caps.as_mut());
-    let transform_tree_caps_fn = move || unsafe {
+    let tree_caps = Arc::new(Mutex::new(None));
+    // Keep the destination alive if the job is abandoned after CUDA starts the callback.
+    let result_slot = Arc::clone(&tree_caps);
+    let transform_tree_caps_fn = move || {
         let tree_caps = get_tree_caps(&src_tree_cap_accessors);
-        assert!(dst_tree_caps_accessor
-            .get_mut()
-            .replace(tree_caps)
-            .is_none());
+        assert!(result_slot.lock().unwrap().replace(tree_caps).is_none());
     };
     callbacks.schedule(transform_tree_caps_fn, stream)?;
     range.end(stream)?;
