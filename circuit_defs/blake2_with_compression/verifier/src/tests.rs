@@ -72,10 +72,7 @@ fn test_unified_cycle_or_delegation() {
                     TestSecurity,
                     ThreadLocalBasedSource,
                     DefaultLeafInclusionVerifier,
-                >(
-                    &mut ProofOutput::empty(),
-                    &mut ProofPublicInputs::uninit(),
-                )
+                >(&mut ProofOutput::empty(), &mut ProofPublicInputs::uninit())
             };
         })
         .expect("spawn verifier thread")
