@@ -78,3 +78,7 @@ verifier_program = ["modular_ops"]
 replace_csr = ["verifier_common/replace_csr"]
 default = ["security_80", "replace_csr", "verifiers"]
 # default = ["security_80"]
+
+[[test]]
+name = "security100_delegation"
+required-features = ["unified_verifier_only_security_100", "replace_csr"]

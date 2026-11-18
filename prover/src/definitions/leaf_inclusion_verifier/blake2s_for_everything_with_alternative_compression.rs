@@ -1,4 +1,3 @@
-
 use super::*;
 use blake2s_u32::state_with_extended_control::*;
 use blake2s_u32::AlignedArray64;
