@@ -702,5 +702,298 @@
       }
     ],
     "interpretation": "The smaller RV32 guest RAM footprint did not produce a meaningful end-to-end proving-time or live allocation reduction in these two-batch GPU runs. Both implementations allocated the same number of Airbender proof chunks. The experiment remains separate from the production candidate."
+  },
+  "proof_geometry": {
+    "phase_scope": "The base proving stage executes the same zkOS app. Only subsequent recursive verifier invocations execute the changed query loop.",
+    "gpu_stage_sample_order": [
+      "default-a",
+      "streaming-a",
+      "streaming-b",
+      "default-b"
+    ],
+    "gpu_stage_measurements": [
+      {
+        "stage": "batch_1_Base layer",
+        "executes_recursive_verifier": false,
+        "counts_family_standalone_init_teardown_delegation": [
+          6,
+          1,
+          3
+        ],
+        "duration_ms": [
+          2230,
+          2224,
+          2242,
+          2260
+        ]
+      },
+      {
+        "stage": "batch_1_Unrolled recursion layer 0",
+        "executes_recursive_verifier": true,
+        "counts_family_standalone_init_teardown_delegation": [
+          4,
+          1,
+          2
+        ],
+        "duration_ms": [
+          1817,
+          1859,
+          1842,
+          1816
+        ]
+      },
+      {
+        "stage": "batch_1_Unrolled recursion layer 1",
+        "executes_recursive_verifier": true,
+        "counts_family_standalone_init_teardown_delegation": [
+          4,
+          1,
+          1
+        ],
+        "duration_ms": [
+          1386,
+          1384,
+          1350,
+          1403
+        ]
+      },
+      {
+        "stage": "batch_1_Unified recursion layer 0",
+        "executes_recursive_verifier": true,
+        "counts_family_standalone_init_teardown_delegation": [
+          3,
+          0,
+          1
+        ],
+        "duration_ms": [
+          1097,
+          1049,
+          1036,
+          1039
+        ]
+      },
+      {
+        "stage": "batch_1_Unified recursion layer 1",
+        "executes_recursive_verifier": true,
+        "counts_family_standalone_init_teardown_delegation": [
+          2,
+          0,
+          1
+        ],
+        "duration_ms": [
+          687,
+          678,
+          709,
+          681
+        ]
+      },
+      {
+        "stage": "batch_2_Base layer",
+        "executes_recursive_verifier": false,
+        "counts_family_standalone_init_teardown_delegation": [
+          6,
+          1,
+          2
+        ],
+        "duration_ms": [
+          1755,
+          1730,
+          1792,
+          1790
+        ]
+      },
+      {
+        "stage": "batch_2_Unrolled recursion layer 0",
+        "executes_recursive_verifier": true,
+        "counts_family_standalone_init_teardown_delegation": [
+          4,
+          1,
+          1
+        ],
+        "duration_ms": [
+          1420,
+          1423,
+          1436,
+          1423
+        ]
+      },
+      {
+        "stage": "batch_2_Unified recursion layer 0",
+        "executes_recursive_verifier": true,
+        "counts_family_standalone_init_teardown_delegation": [
+          3,
+          0,
+          1
+        ],
+        "duration_ms": [
+          900,
+          910,
+          896,
+          913
+        ]
+      },
+      {
+        "stage": "batch_2_Unified recursion layer 1",
+        "executes_recursive_verifier": true,
+        "counts_family_standalone_init_teardown_delegation": [
+          2,
+          0,
+          1
+        ],
+        "duration_ms": [
+          676,
+          699,
+          695,
+          687
+        ]
+      },
+      {
+        "stage": "combined pass over 2 proofs",
+        "executes_recursive_verifier": true,
+        "counts_family_standalone_init_teardown_delegation": [
+          3,
+          0,
+          1
+        ],
+        "duration_ms": [
+          1173,
+          1169,
+          1171,
+          1119
+        ]
+      },
+      {
+        "stage": "shrink pass 0",
+        "executes_recursive_verifier": true,
+        "counts_family_standalone_init_teardown_delegation": [
+          2,
+          0,
+          1
+        ],
+        "duration_ms": [
+          677,
+          686,
+          692,
+          681
+        ]
+      }
+    ],
+    "unified_domain_rows": 8388608,
+    "unified_instruction_capacity_per_proof": 8388607,
+    "standalone_init_teardown_domain_rows": 16777216,
+    "standalone_init_teardown_sets_per_row": 6,
+    "standalone_init_teardown_capacity_per_proof": 100663290,
+    "sparse_host_and_device_record_bytes": 16,
+    "native_same_input_geometry": [
+      {
+        "workload": "verify batch 1 base proof in unrolled guest",
+        "default": {
+          "cycles": 32031187,
+          "touched_guest_words": 282607,
+          "sparse_record_bytes": 4521712,
+          "required_standalone_teardown_chunks": 1,
+          "teardown_capacity_filled_fraction": 0.0028074484750101056
+        },
+        "streaming": {
+          "cycles": 32013920,
+          "touched_guest_words": 85666,
+          "sparse_record_bytes": 1370656,
+          "required_standalone_teardown_chunks": 1,
+          "teardown_capacity_filled_fraction": 0.000851015300612567
+        }
+      },
+      {
+        "workload": "verify batch 1 recursion-unified proof in unified guest",
+        "default": {
+          "cycles": 11957098,
+          "touched_guest_words": 246961,
+          "sparse_record_bytes": 3951376,
+          "required_unified_instruction_chunks": 2,
+          "cycles_to_remove_to_save_a_chunk": 3568491,
+          "execution_capacity_filled_fraction": 0.712698663794835,
+          "integrated_teardown_capacity_filled_in_last_chunk_fraction": 0.0294400488662778,
+          "wholly_empty_teardown_prefix_chunks": 1
+        },
+        "streaming": {
+          "cycles": 11942196,
+          "touched_guest_words": 51488,
+          "sparse_record_bytes": 823808,
+          "required_unified_instruction_chunks": 2,
+          "cycles_to_remove_to_save_a_chunk": 3553589,
+          "execution_capacity_filled_fraction": 0.7118104352725071,
+          "integrated_teardown_capacity_filled_in_last_chunk_fraction": 0.0061378486320792,
+          "wholly_empty_teardown_prefix_chunks": 1
+        }
+      },
+      {
+        "workload": "combine recursion-unified proofs for batches 1 and 2",
+        "default": {
+          "cycles": 23917963,
+          "touched_guest_words": 247143,
+          "sparse_record_bytes": 3954288,
+          "required_unified_instruction_chunks": 3,
+          "cycles_to_remove_to_save_a_chunk": 7140749,
+          "execution_capacity_filled_fraction": 0.9504145722088702,
+          "integrated_teardown_capacity_filled_in_last_chunk_fraction": 0.029461744959562417,
+          "wholly_empty_teardown_prefix_chunks": 2
+        },
+        "streaming": {
+          "cycles": 23888159,
+          "touched_guest_words": 51670,
+          "sparse_record_bytes": 826720,
+          "required_unified_instruction_chunks": 3,
+          "cycles_to_remove_to_save_a_chunk": 7110945,
+          "execution_capacity_filled_fraction": 0.9492302675124329,
+          "integrated_teardown_capacity_filled_in_last_chunk_fraction": 0.006159544725363818,
+          "wholly_empty_teardown_prefix_chunks": 2
+        }
+      }
+    ],
+    "disclosure": "GPU stages record the genuine four independent proof-generation arms. The native workload counts below use identical externally authenticated input proof bytes for each verifier image. The live GPU arms generate and combine distinct arm-specific proofs.",
+    "binary_identity": {
+      "default": {
+        "binary_sha256": "f313dec26e720da0e9372d9f3edc0be54b56bc5009568cb4529d1cad5744993c",
+        "expected_source_revision": "d8965007df1bd7f11a5279a10fe36bbfebaaac58",
+        "images": {
+          "default": {
+            "text_sha256": "c9ef9dd7c618f0e4e24e39be5d888440029b0985214eb47ed569a6c21c6366cd",
+            "first_offset": 14581222,
+            "bytes": 1234832
+          },
+          "streaming": {
+            "text_sha256": "4d5a22015f22e6a2d3cc5d4c03650188d480c403d05db1160e144769e928ed70",
+            "first_offset": -1,
+            "bytes": 1234024
+          }
+        }
+      },
+      "streaming": {
+        "binary_sha256": "17619631fe88359313450249dc1d22875a05d68bd93ecf095731f73df7d3f2ec",
+        "expected_source_revision": "a141a2990d1a8a7006d50b394e7c62398cf7fd2b",
+        "images": {
+          "default": {
+            "text_sha256": "c9ef9dd7c618f0e4e24e39be5d888440029b0985214eb47ed569a6c21c6366cd",
+            "first_offset": -1,
+            "bytes": 1234832
+          },
+          "streaming": {
+            "text_sha256": "4d5a22015f22e6a2d3cc5d4c03650188d480c403d05db1160e144769e928ed70",
+            "first_offset": 14577920,
+            "bytes": 1234024
+          }
+        }
+      }
+    },
+    "embedded_binary_identity_receipt_sha256": "e67533acca2f40b68bd8bbacf60d01a567a5dba336f2b44f6695899317295c98",
+    "registered_gpu_program": "The Security100 unified Bin and Txt are registered at key 0 by UnifiedRecursionProverHostState::new. Both real combine and shrink passes submitted key 0 in each arm and the resulting public range and distinct expected application-chain commitment passed native verification.",
+    "source_paths": {
+      "gpu_program_registration_and_submission": "execution_utils/src/unrolled_gpu.rs#L555-L642",
+      "standalone_teardown_geometry": "circuit_defs/unrolled_circuits/inits_and_teardowns/src/lib.rs#L10-L13",
+      "unified_geometry": "circuit_defs/unrolled_circuits/unified_reduced_machine/src/lib.rs#L17-L19",
+      "teardown_partitions": "gpu_prover/src/execution/cpu_worker.rs#L99-L143",
+      "host_collection": "gpu_prover/src/execution/cpu_worker.rs#L254-L341",
+      "sparse_gpu_transfer": "gpu_prover/src/prover/tracing_data.rs#L240-L266",
+      "fixed_evaluation_allocation": "gpu_prover/src/prover/stage_1.rs#L54-L103"
+    }
   }
 }
