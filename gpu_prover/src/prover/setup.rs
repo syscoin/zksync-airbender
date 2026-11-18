@@ -13,6 +13,7 @@ use era_cudart::result::CudaResult;
 use era_cudart::slice::{CudaSlice, DeviceSlice};
 use era_cudart_sys::CudaError;
 use prover::merkle_trees::MerkleTreeCapVarLength;
+use std::alloc::Allocator;
 use std::mem::{size_of, MaybeUninit};
 use std::ops::DerefMut;
 use std::sync::Arc;
@@ -37,13 +38,23 @@ fn copy_setup_partial_tree_to_host(
     let allocation = HostAllocation::alloc(allocation_bytes, CudaHostAllocFlags::PORTABLE)?;
     let allocator =
         ConcurrentStaticHostAllocator::new([allocation], SETUP_PARTIAL_TREE_HOST_LOG_CHUNK_SIZE);
-    let mut tree = Vec::with_capacity_in(elements, allocator);
     // SAFETY: MaybeUninit<Digest> has the same layout as Digest and can represent
     // each one without accessing the device memory on the host.
     let src = unsafe { device_tree.transmute::<MaybeUninit<Digest>>() };
-    memory_copy(&mut tree.spare_capacity_mut()[..elements], src)?;
-    // SAFETY: On success the synchronous copy initialized each digest; on
-    // failure `?` drops the length-zero vector without exposing the buffer.
+    // SAFETY: On success the synchronous CUDA copy initializes the entire destination.
+    unsafe { initialize_setup_tree(elements, allocator, |dst| memory_copy(dst, src)) }
+}
+
+/// # Safety
+/// A successful copy must have initialized every digest in the destination.
+unsafe fn initialize_setup_tree<A: Allocator>(
+    elements: usize,
+    allocator: A,
+    copy: impl FnOnce(&mut [MaybeUninit<Digest>]) -> CudaResult<()>,
+) -> CudaResult<Vec<Digest, A>> {
+    let mut tree = Vec::with_capacity_in(elements, allocator);
+    copy(&mut tree.spare_capacity_mut()[..elements])?;
+    // SAFETY: The successful initializer filled the reserved slots.
     unsafe { tree.set_len(elements) };
     Ok(tree)
 }
@@ -52,6 +63,19 @@ fn copy_setup_partial_tree_to_host(
 mod tests {
     use super::*;
     use era_cudart::memory::DeviceAllocation;
+    use std::alloc::Global;
+
+    #[test]
+    fn setup_copy_failure_discards_partially_written_storage() {
+        // SAFETY: The initializer reports a failure and may leave any slot unwritten.
+        let result = unsafe {
+            initialize_setup_tree(2, Global, |dst| {
+                dst[0].write([1; 8]);
+                Err(CudaError::ErrorInvalidValue)
+            })
+        };
+        assert!(matches!(result, Err(CudaError::ErrorInvalidValue)));
+    }
 
     #[test]
     fn pinned_setup_partial_tree_copy_preserves_digests() {
